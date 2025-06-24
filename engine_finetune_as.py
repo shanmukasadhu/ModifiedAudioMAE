@@ -45,7 +45,7 @@ def custom_loss_function(label_depths, leaf_nodes, labels, features, device):
             # mask_ij is True, if both i and j have label 1.
             mask_labels = (labels_k[:, None] == 1) & (labels_k[None, :] == 1)
             # remove self-positive pairs.
-            mask_diagonal = torch.eye(*mask_labels.shape, dtype=torch.bool)
+            mask_diagonal = torch.eye(*mask_labels.shape, dtype=torch.bool, device=labels.device)
             mask_labels.masked_fill_(mask_diagonal, 0)
 
             x.append(mask_labels.sum().item())
