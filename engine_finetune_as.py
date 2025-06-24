@@ -117,9 +117,9 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         label_embeddings = model.embedding.weight.unsqueeze(0).repeat(batch_size, 1, 1)
 
         # Get outputs from the ViT model and calculate loss
-        # with torch.cuda.amp.autocast():
-        #     outputs, _  = model(samples, mask_t_prob=args.mask_t_prob, mask_f_prob=args.mask_f_prob)
-        #     loss = criterion(outputs, targets)
+        with torch.cuda.amp.autocast():
+            outputs, _  = model(samples, mask_t_prob=args.mask_t_prob, mask_f_prob=args.mask_f_prob)
+            loss = criterion(outputs, targets)
 
         # No length reduction when mask probs are 0.
         _, feats  = model(samples, mask_t_prob=0.0, mask_f_prob=0.0)
@@ -130,9 +130,9 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         attn_output = attn_output.to(device)#
         attn_output_weights = attn_output_weights.to(device)#
 
-        # Alternative way to get outputs.
-        outputs = (label_embeddings * attn_output).sum(-1)
-        loss =  criterion(outputs, targets)
+        # # Alternative way to get outputs.
+        # outputs = (label_embeddings * attn_output).sum(-1)
+        # loss =  criterion(outputs, targets)
 
         print(f"Attention Output Shape: {attn_output.shape}")#
 
@@ -144,9 +144,8 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         print(f"BCE loss: {loss}")
         print(f"Loss Item: {loss.item()}")
 
-        constant =1#
-
-        loss = constant * contrastive_loss #+ loss
+        constant =1
+        # loss = constant * contrastive_loss #+ loss
 
         print(f"New loss: {loss}\n")
 
