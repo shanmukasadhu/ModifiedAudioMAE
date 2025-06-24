@@ -31,39 +31,27 @@ from util.stat import calculate_stats, concat_all_gather
 def custom_loss_function(label_depths, leaf_nodes, labels, features, device):
     layer_loss = []
     # Later: take this out and place in main_finetune_as.py
-    sup_con_loss =SupConLoss(temperature=0.1, base_temperature=0.1)
+    sup_con_loss = SupConLoss(temperature=0.1, base_temperature=0.1)
     max_depths = 5
-    label_depths = label_depths.to(device)
-    for l in range(0,max_depths+1):
+    for l in range(0, max_depths+1):
         layer = max_depths-l # We start from the bottom
-        # Get Depth Mask
-        depth_mask = label_depths <= (layer)
-        depth_mask = depth_mask.to(device)
-        # Create mask
-        mask = depth_mask * labels
 
-
-        mask=mask.to(device)
-        # Create Layer Labels
-        layer_labels = labels*mask
-        layer_labels = layer_labels.to(device)
-        
-#        print(layer_labels[0])
         # Iterate through each leaf
         leaf_loss = []
         x = []
-        for leafs in leaf_nodes[str(layer+1)]:
-            k = leafs
-          #  mask_labels = torch.stack([layer_labels[i, k] == layer_labels[:, k] for i in range(layer_labels.shape[0])]).float()
-            #mask_labels = torch.stack([(layer_labels[i, k] == 1 & layer_labels[:, k] == 1) & (torch.arange(layer_labels.shape[0], device=device) != i) for i in range(layer_labels.shape[0])]).float()
+        for k in leaf_nodes[str(layer+1)]:
 
-            mask_labels = torch.stack([(layer_labels[i, k] == 1) & (layer_labels[:, k] == 1) & (torch.arange(layer_labels.shape[0], device=device) != i) for i in range(layer_labels.shape[0])]).float()
+            labels_k = labels[:, k]
+            # mask_ij is True, if both i and j have label 1.
+            mask_labels = (labels_k[:, None] == 1) & (labels_k[None, :] == 1)
+            mask_diagonal = torch.eye(*mask_labels.shape, dtype=torch.bool)
+            mask_labels.masked_fill_(mask_diagonal, 0)
+
             x.append(mask_labels.sum().item())
  #           print(labels[0])
  #           print(mask_labels[0])
             mask_labels=mask_labels.to(device)
             #print(f"Nonzero elements in mask_labels: {mask_labels.sum()}")
-
 
             sliced_feature = features[:, k:k+1, :]
             sliced_feature = sliced_feature.to(device)
