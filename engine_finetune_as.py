@@ -120,10 +120,6 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
             loss = criterion(outputs, targets)
 
         # Perform Cross Attention between Label Embeddings and masked audio samples
-        q = label_embeddings #.transpose(0,1)
-        kv = x_tran.to(device) #.transpose(0,1)
-        embed_dim = 768
-        num_heads = 8
         attn_output, attn_output_weights = model.multihead_attn(label_embeddings, x_tran, x_tran)
 
         attn_output = attn_output.to(device)#
