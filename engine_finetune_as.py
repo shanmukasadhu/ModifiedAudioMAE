@@ -106,8 +106,9 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         targets = targets.to(device, non_blocking=True)
 
         # Get Label Embeddings for batch
-        #label_embeddings = model.embedding(targets.long()) #.to(device)
-        label_embeddings = model.embedding(targets.to(device).long())
+        batch_size = targets.shape[0]
+        import pdb;pdb.set_trace()
+        label_embeddings = model.embededing.weight.unsqueeze(0).repeat(batch_size, 0)
 
         # Get outputs from the ViT model and calculate loss
         with torch.cuda.amp.autocast():
