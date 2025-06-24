@@ -112,11 +112,14 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
         # Get outputs from the ViT model and calculate loss
         with torch.cuda.amp.autocast():
-            outputs, x_tran  = model(samples, mask_t_prob=args.mask_t_prob, mask_f_prob=args.mask_f_prob)
+            outputs, _  = model(samples, mask_t_prob=args.mask_t_prob, mask_f_prob=args.mask_f_prob)
             loss = criterion(outputs, targets)
 
+        # No length reduction.
+        _, feats  = model(samples, mask_t_prob=0.0, mask_f_prob=0.0)
+
         # Perform Cross Attention between Label Embeddings and masked audio samples
-        attn_output, attn_output_weights = model.multihead_attn(label_embeddings, x_tran, x_tran)
+        attn_output, attn_output_weights = model.multihead_attn(label_embeddings, feats, feats)
 
         attn_output = attn_output.to(device)#
         attn_output_weights = attn_output_weights.to(device)#
