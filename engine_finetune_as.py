@@ -145,7 +145,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         print(f"Loss Item: {loss.item()}")
 
         constant =1
-        # loss = constant * contrastive_loss #+ loss
+        loss = constant * contrastive_loss + loss
 
         print(f"New loss: {loss}\n")
 
