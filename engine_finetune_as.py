@@ -33,6 +33,9 @@ def custom_loss_function(label_depths, leaf_nodes, labels, features, device):
     # Later: take this out and place in main_finetune_as.py
     sup_con_loss = SupConLoss(temperature=0.1, base_temperature=0.1)
     max_depths = 5
+
+    features = F.normalize(features, dim=-1)
+
     for l in range(0, max_depths+1):
         layer = max_depths-l # We start from the bottom
 
@@ -61,12 +64,12 @@ def custom_loss_function(label_depths, leaf_nodes, labels, features, device):
             sliced_feature = sliced_feature.to(device)
 
             # Calculate Leaf Loss
-            sliced_feature = F.normalize(sliced_feature, dim=-1)
             # print(f"Mask Label Sum: {mask_labels.sum()}")
             layer_leaf_loss = sup_con_loss(features = sliced_feature, mask=mask_labels).to(device)
             #layer_leaf_loss.to(device)
 
             leaf_loss.append(layer_leaf_loss)
+
         print(f"Layer {layer} mask_labels sum: {sum(x)/len(x)}")
         # ADD A PENALTY LOSS DUE TO LAYER
         current_layer_loss = sum(leaf_loss)/len(leaf_loss)
