@@ -33,9 +33,8 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
         del self.norm  # remove the original norm
         self.mask_2d = mask_2d
         self.use_custom_patch = use_custom_patch
-        num_heads=12
-        depth=12
-        mlp_ratio=4
+
+        # TODO: configure these parameters, at least the number of classes.
         self.embedding = nn.Embedding(556, 768)
         self.multihead_attn = nn.MultiheadAttention(embed_dim=768, num_heads=8, batch_first=True)
 
@@ -52,6 +51,7 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
         for blk in self.blocks:
             x = blk(x)
 
+        x_no_pool = x[:, 1:, :]
         if self.global_pool:
             x = x[:, 1:, :].mean(dim=1)  # global pool without cls token
             outcome = self.fc_norm(x)
@@ -59,7 +59,7 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
             x = self.norm(x)
             outcome = x[:, 0]
 
-        return outcome, None
+        return outcome, x_no_pool
 
     def random_masking(self, x, mask_ratio):
         """
@@ -168,7 +168,8 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
         # apply Transformer blocks
         for blk in self.blocks:
             x = blk(x)
-        x_tran = x
+
+        x_no_pool = x[:, 1:, :]
         #print(f"After adding Transformer blocks: {x.shape}")
         if self.global_pool:
             x = x[:, 1:, :].mean(dim=1)  # global pool without cls token
@@ -178,7 +179,7 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
             outcome = x[:, 0]
         #print(f"Outcome shape: {x.shape}")
 #        print(" ")
-        return outcome,x_tran
+        return outcome, x_no_pool
 
 
 
