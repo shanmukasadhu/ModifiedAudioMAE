@@ -165,7 +165,8 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         print(f"Contrastive Loss: {float(contrastive_loss)}")#
         print(f"BCE loss: {float(bce_loss)}")
 
-        constant = 0.5
+        # TODO: configure the coefficient.
+        constant = 1
         z = (constant * contrastive_loss).item()
         loss = constant * contrastive_loss + bce_loss
         print(model.embedding.weight[:5,:5])

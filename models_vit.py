@@ -26,7 +26,6 @@ class Projector(nn.Module):
         self.output_layer = nn.Linear(hidden_size, output_size)
 
     def forward(self, x):
-        import pdb;pdb.set_trace()
         x = self.hidden_layer(x)
         x = self.activation(x)
         x = (self.output_layer.weight.unsqueeze(0) * x).sum(-1)
