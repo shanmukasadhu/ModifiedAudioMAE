@@ -30,7 +30,7 @@ class Projector(nn.Module):
         x = self.hidden_layer(x)
         x = self.activation(x)
         x = (self.output_layer.weight.unsqueeze(0) * x).sum(-1)
-        x = x + self.output_layer.bias.unsqueeze()
+        x = x + self.output_layer.bias.unsqueeze(0)
         return x
 
 
