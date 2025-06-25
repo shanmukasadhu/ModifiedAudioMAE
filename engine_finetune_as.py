@@ -161,13 +161,6 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
                     parameters=model.parameters(), create_graph=False,
                     update_grad=(data_iter_step + 1) % accum_iter == 0)
 
-#        if model.embedding.weight.grad is not None:
-#            print("Contrastive grad norm:", model.embedding.weight.grad.norm())
-#        else:
-#            print("Contrastive grad is None!")
-
-
-
         if (data_iter_step + 1) % accum_iter == 0:
             optimizer.zero_grad()
 

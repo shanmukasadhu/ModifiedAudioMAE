@@ -179,8 +179,7 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
         else:
             x = self.norm(x)
             outcome = x[:, 0]
-        #print(f"Outcome shape: {x.shape}")
-#        print(" ")
+
         return outcome, x_seq
 
 
@@ -192,7 +191,7 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
         else:
             outcome, x_seq  = self.forward_features(x)
         x_prime = self.head(outcome)
-        #print(x_prime.shape)
+
         return x_prime, self.seq_norm(x_seq)
 
 
