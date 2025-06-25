@@ -155,19 +155,12 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         samples = samples.to(device, non_blocking=True)
         targets = targets.to(device, non_blocking=True)
 
-        # Get Label Embeddings for batch
-        batch_size = targets.shape[0]
-        # shape [batch, num_classes, dim]
-        label_embeddings = model.embedding.weight.unsqueeze(0).repeat(batch_size, 1, 1)
-
         # Get outputs from the ViT model and calculate loss
         with torch.cuda.amp.autocast():
-            outputs, _  = model(samples, mask_t_prob=args.mask_t_prob, mask_f_prob=args.mask_f_prob)
+            outputs, feats  = model(samples, mask_t_prob=args.mask_t_prob, mask_f_prob=args.mask_f_prob)
             bce_loss = criterion(outputs, targets)
 
-        print(f"Attention Output Shape: {attn_output.shape}")#
-
-        contrastive_loss = custom_loss_function(layer_leafs, targets, attn_output, device)####
+        contrastive_loss = custom_loss_function(layer_leafs, targets, feats, device)####
 
         print(f"Contrastive Loss: {float(contrastive_loss)}")#
         print(f"BCE loss: {float(bce_loss)}")
@@ -176,7 +169,6 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         z = (constant * contrastive_loss).item()
         loss = constant * contrastive_loss + bce_loss
         print(model.embedding.weight[:5,:5])
-#        print(model.head.weight[:5,:5])
         print(f"New loss: {loss}\n")
 
         loss_value = loss.item()
@@ -212,9 +204,6 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
             epoch_1000x = int((data_iter_step / len(data_loader) + epoch) * 1000)
             log_writer.add_scalar('loss', loss_value_reduce, epoch_1000x)
             log_writer.add_scalar('lr', max_lr, epoch_1000x)
-        #print("label_embeddings.requires_grad:", label_embeddings.requires_grad)
-        #print("attn_output.requires_grad:", attn_output.requires_grad)
-
 
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
