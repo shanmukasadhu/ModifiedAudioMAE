@@ -8,7 +8,7 @@
 # DeiT: https://github.com/facebookresearch/deit
 # BEiT: https://github.com/microsoft/unilm/tree/master/beit
 # --------------------------------------------------------
-
+import torchaudio
 import math
 import sys
 from typing import Iterable, Optional
@@ -27,6 +27,40 @@ from timm.utils import accuracy
 import util.misc as misc
 import util.lr_sched as lr_sched
 from util.stat import calculate_stats, concat_all_gather
+
+def specAug(samples, audio_conf):
+    freqm = audio_conf.get('freqm')
+    timem = audio_conf.get('timem')
+    norm_mean = audio_conf.get('mean')
+    norm_std = audio_conf.get('std')
+    freqm_mask = torchaudio.transforms.FrequencyMasking(freqm)
+    timem_mask = torchaudio.transforms.TimeMasking(timem)
+    noise = audio_conf.get('noise')
+
+
+    return_samples = []
+
+    # Loop through each item in the batch:
+    for i in range(samples.size(0)):
+        fbank = samples[i,0]
+        fbank = fbank.transpose(0, 1).unsqueeze(0)
+        if freqm != 0:
+            fbank = freqm_mask(fbank)
+        if timem != 0:
+            fbank = timem_mask(fbank)
+        fbank = fbank.squeeze().transpose(0, 1)  # back to (1024, 128)
+        fbank = (fbank - norm_mean) / (norm_std * 2)
+        if noise == True:
+            fbank = fbank + torch.rand(fbank.shape[0], fbank.shape[1]) * np.random.rand() / 10
+            fbank = torch.roll(fbank, np.random.randint(-10, 10), 0)
+        return_samples.append(fbank.unsqueeze(0))
+
+    samples = torch.stack(return_samples, dim=0)
+    return samples
+
+
+
+
 
 def custom_loss_function(leaf_nodes, labels, features, device):
     layer_loss = []
@@ -74,7 +108,7 @@ def custom_loss_function(leaf_nodes, labels, features, device):
         # ADD A PENALTY LOSS DUE TO LAYER
         # print(leaf_loss)
         current_layer_loss = sum(leaf_loss)/len(leaf_loss)
-        print(f'current_layer_loss={current_layer_loss}')
+       # print(f'current_layer_loss={current_layer_loss}')
         current_penalty = 1 #/(max_depths - layer +1)   #np.exp(1/((max_depths-layer)+1))
         layer_loss_penalty = current_layer_loss*current_penalty
         layer_loss.append(layer_loss_penalty)
@@ -86,7 +120,7 @@ def custom_loss_function(leaf_nodes, labels, features, device):
 
 def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
                     data_loader: Iterable, optimizer: torch.optim.Optimizer,
-                    device: torch.device, epoch: int, loss_scaler, layer_leafs, max_norm: float = 0,
+                    device: torch.device, epoch: int, loss_scaler, layer_leafs,audio_conf,data_aug ,max_norm: float = 0,
                     mixup_fn: Optional[Mixup] = None, log_writer=None,
                     args=None):
     model.train(True)
@@ -103,6 +137,14 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         print('log_dir: {}'.format(log_writer.log_dir))
 
     for data_iter_step, (samples, targets, _vids) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
+
+
+        # Perform 2x Augmentations:
+        if data_aug:
+            samples = specAug(torch.cat([samples, samples], dim = 0),audio_conf)
+            targets = torch.cat([targets, targets], dim = 0)
+            print(f"Shape of samples {samples.shape} and target {targets.shape}  doubled")
+
 
         # we use a per iteration (instead of per epoch) lr scheduler
         if data_iter_step % accum_iter == 0:
@@ -144,10 +186,12 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         print(f"Contrastive Loss: {float(contrastive_loss)}")#
         print(f"BCE loss: {float(loss)}")
 
-        constant =1
+        constant = 0.5
+        z = (constant * contrastive_loss).item()
+        bce_loss=loss.item()
         loss = constant * contrastive_loss + loss
-        print(model.embedding.weight[:5,:5])
-        print(model.head.weight[:5,:5])
+#        print(model.embedding.weight[:5,:5])
+#        print(model.head.weight[:5,:5])
         print(f"New loss: {loss}\n")
 
         loss_value = loss.item()
@@ -191,7 +235,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
     print("Averaged stats:", metric_logger)
-    return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+    return {k: meter.global_avg for k, meter in metric_logger.meters.items()}, z, bce_loss
 
 
 @torch.no_grad()

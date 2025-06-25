@@ -16,7 +16,7 @@ import numpy as np
 import os
 import time
 from pathlib import Path
-
+import wandb
 import torch
 import torch.nn as nn
 import torch.backends.cudnn as cudnn
@@ -190,6 +190,15 @@ def get_args_parser():
     parser.add_argument('--n_frm', default=6, type=int, help='num of frames for video')
     parser.add_argument('--replace_with_mae', type=bool, default=False, help='replace_with_mae')
     parser.add_argument('--load_imgnet_pt', type=bool, default=False, help='when img_pt_ckpt, if load_imgnet_pt, use img_pt_ckpt to initialize audio branch, if not, keep audio branch random')
+    parser.add_argument('--data_aug', type=bool, default=False)
+
+    # Wandb Logging:
+    parser.add_argument('--no_wandb', action='store_true', help='Disable WandB logging'); 
+    parser.add_argument('--wandb_entity', type=str, default=None, help='wandb entity');
+    parser.add_argument('--wandb_name', type=str, default=None, help='wandb entity');
+    parser.add_argument('--wandb_project', type=str, default=None, help='wandb entity');
+
+
     return parser
 
 
@@ -231,11 +240,16 @@ class PatchEmbed_new(nn.Module):
 def main(args):
     misc.init_distributed_mode(args)
 
+    if not args.no_wandb:
+        wandb.init(project=args.wandb_project, entity=args.wandb_entity, config=args, resume='allow', name=args.wandb_name)
+
+
+
     print('job dir: {}'.format(os.path.dirname(os.path.realpath(__file__))))
     print("{}".format(args).replace(', ', ',\n'))
     
     # Default to GPU 1
-    args.device = 'cuda:2'
+    args.device = 'cuda:0'
     device = torch.device(args.device)
 
     # fix the seed for reproducibility
@@ -277,10 +291,10 @@ def main(args):
                       'noise':False,
                       'multilabel':multilabel_dataset[args.dataset],
                       }  
-        dataset_train = AudiosetDataset(args.data_train, label_csv=args.label_csv, audio_conf=audio_conf_train, 
+        dataset_train = AudiosetDataset(args.data_aug,args.data_train, label_csv=args.label_csv, audio_conf=audio_conf_train, 
                                         use_fbank=args.use_fbank, fbank_dir=args.fbank_dir, 
                                         roll_mag_aug=args.roll_mag_aug, load_video=args.load_video, mode='train')
-        dataset_val = AudiosetDataset(args.data_eval, label_csv=args.label_csv, audio_conf=audio_conf_val, 
+        dataset_val = AudiosetDataset(False, args.data_eval, label_csv=args.label_csv, audio_conf=audio_conf_val, 
                                         use_fbank=args.use_fbank, fbank_dir=args.fbank_dir, 
                                         roll_mag_aug=False, load_video=args.load_video, mode='eval')
 
@@ -488,9 +502,9 @@ def main(args):
         #         args=args
         #     )            
         # else:
-        train_stats = train_one_epoch(
+        train_stats, contrastive_loss, bce_loss = train_one_epoch(
                 model, criterion, data_loader_train,
-                optimizer, device, epoch, loss_scaler, layer_leafs,
+                optimizer, device, epoch, loss_scaler, layer_leafs, audio_conf_train,args.data_aug,
                 args.clip_grad, mixup_fn,
                 log_writer=log_writer,
                 args=args
@@ -515,11 +529,16 @@ def main(args):
                         **{f'test_{k}': v for k, v in test_stats.items()},
                         'epoch': epoch,
                         'n_parameters': n_parameters}
+        wandb_stats = {'epoch': epoch,'Test mAP': test_stats['mAP'],'Train_lr': log_stats['train_lr'],'Train_loss': log_stats['train_loss'], 'BCE_loss': bce_loss, 'Contrastive_loss':contrastive_loss}
+        
+        if not args.no_wandb:
+            wandb.log(wandb_stats)
+
 
         if args.output_dir and misc.is_main_process():
             if log_writer is not None:
                 log_writer.flush()
-            with open(os.path.join(args.output_dir, "log_1_7M_556training.txt"), mode="a", encoding="utf-8") as f:
+            with open(os.path.join(args.output_dir, "workingiwith2augv2.txt"), mode="a", encoding="utf-8") as f:
                 f.write(json.dumps(log_stats) + "\n")
 
     total_time = time.time() - start_time
