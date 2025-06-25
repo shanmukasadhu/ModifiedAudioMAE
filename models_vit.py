@@ -26,19 +26,19 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
         super(VisionTransformer, self).__init__(**kwargs)
 
         self.global_pool = global_pool
+        embed_dim = kwargs['embed_dim']
+        norm_layer = kwargs['norm_layer']
         if self.global_pool:
-            norm_layer = kwargs['norm_layer']
-            embed_dim = kwargs['embed_dim']
             self.fc_norm = norm_layer(embed_dim)
-        import pdb;pdb.set_trace()
         del self.norm  # remove the original norm
         self.mask_2d = mask_2d
         self.use_custom_patch = use_custom_patch
 
         # TODO: configure these parameters, at least the number of classes.
-        self.seq_norm = norm_layer(768)
-        self.embedding = nn.Embedding(556, 768)
-        self.multihead_attn = nn.MultiheadAttention(embed_dim=768, num_heads=8, batch_first=True)
+        num_classes = kwargs['num_classes']
+        self.seq_norm = norm_layer(embed_dim)
+        self.embedding = nn.Embedding(num_classes, embed_dim)
+        self.multihead_attn = nn.MultiheadAttention(embed_dim=embed_dim, num_heads=8, batch_first=True)
 
 
     def forward_features(self, x):
@@ -53,7 +53,7 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
         for blk in self.blocks:
             x = blk(x)
 
-        x_no_pool = x[:, 1:, :]
+        x_seq = x[:, 1:, :]
         if self.global_pool:
             x = x[:, 1:, :].mean(dim=1)  # global pool without cls token
             outcome = self.fc_norm(x)
@@ -61,7 +61,7 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
             x = self.norm(x)
             outcome = x[:, 0]
 
-        return outcome, x_no_pool
+        return outcome, x_seq
 
     def random_masking(self, x, mask_ratio):
         """
@@ -171,7 +171,7 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
         for blk in self.blocks:
             x = blk(x)
 
-        x_no_pool = x[:, 1:, :]
+        x_seq = x[:, 1:, :]
         #print(f"After adding Transformer blocks: {x.shape}")
         if self.global_pool:
             x = x[:, 1:, :].mean(dim=1)  # global pool without cls token
@@ -181,19 +181,19 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
             outcome = x[:, 0]
         #print(f"Outcome shape: {x.shape}")
 #        print(" ")
-        return outcome, x_no_pool
+        return outcome, x_seq
 
 
 
     # overwrite original timm
     def forward(self, x, v=None, mask_t_prob=0.0, mask_f_prob=0.0):
         if mask_t_prob > 0.0 or mask_f_prob > 0.0:
-            x, x_tran  = self.forward_features_mask(x, mask_t_prob=mask_t_prob, mask_f_prob=mask_f_prob)
+            outcome, x_seq  = self.forward_features_mask(x, mask_t_prob=mask_t_prob, mask_f_prob=mask_f_prob)
         else:
-            x, x_tran  = self.forward_features(x)
-        x_prime = self.head(x)
+            outcome, x_seq  = self.forward_features(x)
+        x_prime = self.head(outcome)
         #print(x_prime.shape)
-        return x_prime, self.seq_norm(x_tran)
+        return x_prime, self.seq_norm(x_seq)
 
 
 
