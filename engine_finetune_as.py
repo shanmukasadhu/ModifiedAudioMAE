@@ -72,7 +72,9 @@ def custom_loss_function(label_depths, leaf_nodes, labels, features, device):
 
         print(f"Layer {layer} mask_labels sum: {sum(x)/len(x)}")
         # ADD A PENALTY LOSS DUE TO LAYER
+        # print(leaf_loss)
         current_layer_loss = sum(leaf_loss)/len(leaf_loss)
+        print(f'current_layer_loss={current_layer_loss}')
         current_penalty = 1 #/(max_depths - layer +1)   #np.exp(1/((max_depths-layer)+1))
         layer_loss_penalty = current_layer_loss*current_penalty
         layer_loss.append(layer_loss_penalty)
@@ -126,6 +128,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
         # Perform Cross Attention between Label Embeddings and masked audio samples
         attn_output, attn_output_weights = model.multihead_attn(label_embeddings, feats, feats)
+        # import pdb;pdb.set_trace()
 
         attn_output = attn_output.to(device)#
         attn_output_weights = attn_output_weights.to(device)#
@@ -138,15 +141,16 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
         contrastive_loss = custom_loss_function(label_depths, layer_leafs, targets, attn_output, device)####
 
-        print(contrastive_loss.requires_grad)
-        print(contrastive_loss.grad_fn)
-        print(f"Contrastive Loss: {contrastive_loss}")#
+        #print(contrastive_loss.requires_grad)
+        #print(contrastive_loss.grad_fn)
+        #print(f"Contrastive Loss: {contrastive_loss}")#
         print(f"BCE loss: {loss}")
         print(f"Loss Item: {loss.item()}")
 
         constant =1
         loss = constant * contrastive_loss + loss
-
+        print(model.embedding.weight[:5,:5])
+        print(model.head.weight[:5,:5])
         print(f"New loss: {loss}\n")
 
         loss_value = loss.item()

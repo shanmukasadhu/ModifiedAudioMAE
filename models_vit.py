@@ -30,11 +30,13 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
             norm_layer = kwargs['norm_layer']
             embed_dim = kwargs['embed_dim']
             self.fc_norm = norm_layer(embed_dim)
+        import pdb;pdb.set_trace()
         del self.norm  # remove the original norm
         self.mask_2d = mask_2d
         self.use_custom_patch = use_custom_patch
 
         # TODO: configure these parameters, at least the number of classes.
+        self.seq_norm = norm_layer(768)
         self.embedding = nn.Embedding(556, 768)
         self.multihead_attn = nn.MultiheadAttention(embed_dim=768, num_heads=8, batch_first=True)
 
@@ -191,7 +193,7 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
             x, x_tran  = self.forward_features(x)
         x_prime = self.head(x)
         #print(x_prime.shape)
-        return x_prime, x_tran
+        return x_prime, self.seq_norm(x_tran)
 
 
 

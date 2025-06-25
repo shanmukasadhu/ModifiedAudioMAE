@@ -163,12 +163,10 @@ class SupConLoss(nn.Module):
     Author: Yonglong Tian (yonglong@mit.edu)
     Date: May 07, 2020
     """
-    def __init__(self, temperature=0.07, contrast_mode='all',
-                 base_temperature=0.07, device='cuda'):
+    def __init__(self, temperature=0.07, contrast_mode='all', device='cuda'):
         super(SupConLoss, self).__init__()
         self.temperature = temperature
         self.contrast_mode = contrast_mode
-        self.base_temperature = base_temperature
         self.device = device
 
     def forward(self, features, labels=None, mask=None):
@@ -255,10 +253,5 @@ class SupConLoss(nn.Module):
         exp_logits = torch.exp(logits) * logits_mask # [batch_size * n_views, batch_size * n_views]
         log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True) + eplison) # [batch_size * n_views, batch_size * n_views]
         # compute mean of log-likelihood over positive
-        mean_log_prob_pos = (mask * log_prob).sum(1) / (mask.sum(1) + eplison) # [batch_size * n_views]
-        # print(mean_log_prob_pos)
-        # loss
-        loss = - (self.temperature / self.base_temperature) * mean_log_prob_pos
-        loss = loss.view(anchor_count, batch_size).mean()
-        # print(loss)
+        loss = - (mask * log_prob).sum() / (mask.sum() + eplison) # [batch_size * n_views]
         return loss
