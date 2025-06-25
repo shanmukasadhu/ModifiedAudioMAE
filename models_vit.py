@@ -18,6 +18,21 @@ import timm.models.vision_transformer
 from timm.models.vision_transformer import PatchEmbed, Block
 from util.patch_embed import PatchEmbed_new, PatchEmbed3D_new
 
+class Projector(nn.Module):
+    def __init__(self, input_size, hidden_size, output_size):
+        super(Projector, self).__init__()
+        self.hidden_layer = nn.Linear(input_size, hidden_size)
+        self.activation = nn.ReLU()
+        self.output_layer = nn.Linear(hidden_size, output_size)
+
+    def forward(self, x):
+        import pdb;pdb.set_trace()
+        x = self.hidden_layer(x)
+        x = self.activation(x)
+        x = (self.output_layer.weight.unsqueeze(0) * x).sum(-1)
+        x = x + self.output_layer.bias.unsqueeze()
+        return x
+
 
 class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
     """ Vision Transformer with support for global average pooling
@@ -35,11 +50,11 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
         self.use_custom_patch = use_custom_patch
 
         # TODO: configure these parameters, at least the number of classes.
-        num_classes = kwargs['num_classes']
+        self.num_classes = kwargs['num_classes']
         self.seq_norm = norm_layer(embed_dim)
-        self.embedding = nn.Embedding(num_classes, embed_dim)
+        self.embedding = nn.Embedding(self.num_classes, embed_dim)
         self.multihead_attn = nn.MultiheadAttention(embed_dim=embed_dim, num_heads=8, batch_first=True)
-
+        self.label_dep_projector = Projector(input_size=embed_dim, hidden_size=1024, output_size=self.num_classes)
 
     def forward_features(self, x):
         B = x.shape[0]
@@ -185,15 +200,27 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
 
 
     # overwrite original timm
-    def forward(self, x, v=None, mask_t_prob=0.0, mask_f_prob=0.0):
+    def forward(self, x, mask_t_prob=0.0, mask_f_prob=0.0, classify_label_dep_emb=True):
         if mask_t_prob > 0.0 or mask_f_prob > 0.0:
             outcome, x_seq  = self.forward_features_mask(x, mask_t_prob=mask_t_prob, mask_f_prob=mask_f_prob)
         else:
             outcome, x_seq  = self.forward_features(x)
-        x_prime = self.head(outcome)
+        logits_mean_pool = self.head(outcome)
 
-        return x_prime, self.seq_norm(x_seq)
+        x_seq = self.seq_norm(x_seq)
+        batch_size = x.shape[0]
+        labels_for_emb = torch.arange(self.num_classes).unsqueeze(0).repeat(batch_size, 1)
+        # shape [batch, num_classes, dim]
+        label_embeddings = self.embedding(labels_for_emb)
 
+        # Perform Cross Attention between Label Embeddings and masked audio samples.
+        emb_label_dep, _ = self.multihead_attn(label_embeddings, x_seq, x_seq)
+        logits_label_dep = self.label_dep_projector(emb_label_dep)
+
+        if classify_label_dep_emb:
+            return logits_label_dep, emb_label_dep
+        else:
+            return logits_mean_pool, emb_label_dep
 
 
 def vit_small_patch16(**kwargs):

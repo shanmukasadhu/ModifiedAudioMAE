@@ -163,39 +163,23 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         # Get outputs from the ViT model and calculate loss
         with torch.cuda.amp.autocast():
             outputs, _  = model(samples, mask_t_prob=args.mask_t_prob, mask_f_prob=args.mask_f_prob)
-            loss = criterion(outputs, targets)
-
-        # No length reduction when mask probs are 0.
-        _, feats  = model(samples, mask_t_prob=0.0, mask_f_prob=0.0)
-
-        # Perform Cross Attention between Label Embeddings and masked audio samples
-        attn_output, attn_output_weights = model.multihead_attn(label_embeddings, feats, feats)
-        # import pdb;pdb.set_trace()
-
-        attn_output = attn_output.to(device)#
-        attn_output_weights = attn_output_weights.to(device)#
-
-        # Alternative way to get outputs and BCE loss.
-        # outputs = (label_embeddings * attn_output).sum(-1)
-        # loss =  criterion(outputs, targets)
+            bce_loss = criterion(outputs, targets)
 
         print(f"Attention Output Shape: {attn_output.shape}")#
 
         contrastive_loss = custom_loss_function(layer_leafs, targets, attn_output, device)####
 
         print(f"Contrastive Loss: {float(contrastive_loss)}")#
-        print(f"BCE loss: {float(loss)}")
+        print(f"BCE loss: {float(bce_loss)}")
 
         constant = 0.5
         z = (constant * contrastive_loss).item()
-        bce_loss=loss.item()
-        loss = constant * contrastive_loss + loss
-#        print(model.embedding.weight[:5,:5])
+        loss = constant * contrastive_loss + bce_loss
+        print(model.embedding.weight[:5,:5])
 #        print(model.head.weight[:5,:5])
         print(f"New loss: {loss}\n")
 
         loss_value = loss.item()
-
         if not math.isfinite(loss_value):
             print("Loss is {}, stopping training".format(loss_value))
             sys.exit(1)
