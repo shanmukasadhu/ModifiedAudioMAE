@@ -209,9 +209,9 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
 
         x_seq = self.seq_norm(x_seq)
         batch_size = x.shape[0]
-        labels_for_emb = torch.arange(self.num_classes).unsqueeze(0).repeat(batch_size, 1)
+        all_labels = torch.arange(self.num_classes, device=x.device).unsqueeze(0).repeat(batch_size, 1)
         # shape [batch, num_classes, dim]
-        label_embeddings = self.embedding(labels_for_emb)
+        label_embeddings = self.embedding(all_labels)
 
         # Perform Cross Attention between Label Embeddings and masked audio samples.
         emb_label_dep, _ = self.multihead_attn(label_embeddings, x_seq, x_seq)
