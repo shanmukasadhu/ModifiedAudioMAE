@@ -490,7 +490,7 @@ def main(args):
         # else:
         train_stats = train_one_epoch(
                 model, criterion, data_loader_train,
-                optimizer, device, epoch, loss_scaler, label_depths556,layer_leafs,
+                optimizer, device, epoch, loss_scaler, layer_leafs,
                 args.clip_grad, mixup_fn,
                 log_writer=log_writer,
                 args=args

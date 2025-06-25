@@ -28,10 +28,10 @@ import util.misc as misc
 import util.lr_sched as lr_sched
 from util.stat import calculate_stats, concat_all_gather
 
-def custom_loss_function(label_depths, leaf_nodes, labels, features, device):
+def custom_loss_function(leaf_nodes, labels, features, device):
     layer_loss = []
     # Later: take this out and place in main_finetune_as.py
-    sup_con_loss = SupConLoss(temperature=0.1, base_temperature=0.1)
+    sup_con_loss = SupConLoss(temperature=0.1)
     max_depths = 5
 
     features = F.normalize(features, dim=-1)
@@ -86,7 +86,7 @@ def custom_loss_function(label_depths, leaf_nodes, labels, features, device):
 
 def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
                     data_loader: Iterable, optimizer: torch.optim.Optimizer,
-                    device: torch.device, epoch: int, loss_scaler,label_depths,layer_leafs,max_norm: float = 0,
+                    device: torch.device, epoch: int, loss_scaler, layer_leafs, max_norm: float = 0,
                     mixup_fn: Optional[Mixup] = None, log_writer=None,
                     args=None):
     model.train(True)
@@ -139,7 +139,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
         print(f"Attention Output Shape: {attn_output.shape}")#
 
-        contrastive_loss = custom_loss_function(label_depths, layer_leafs, targets, attn_output, device)####
+        contrastive_loss = custom_loss_function(layer_leafs, targets, attn_output, device)####
 
         #print(contrastive_loss.requires_grad)
         #print(contrastive_loss.grad_fn)
