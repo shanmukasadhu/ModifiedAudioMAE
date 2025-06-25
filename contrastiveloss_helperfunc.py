@@ -251,7 +251,8 @@ class SupConLoss(nn.Module):
         eplison = 1e-8
         # compute log_prob
         exp_logits = torch.exp(logits) * logits_mask # [batch_size * n_views, batch_size * n_views]
+        # TODO: provide options to compute denominator to limit the number of positive pairs.
         log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True) + eplison) # [batch_size * n_views, batch_size * n_views]
         # compute mean of log-likelihood over positive
-        loss = - (mask * log_prob).sum() / (mask.sum() + eplison) # [batch_size * n_views]
+        loss = - (mask * log_prob).sum() / (mask.sum() + eplison)
         return loss

@@ -133,7 +133,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         attn_output = attn_output.to(device)#
         attn_output_weights = attn_output_weights.to(device)#
 
-        # # Alternative way to get outputs.
+        # Alternative way to get outputs and BCE loss.
         # outputs = (label_embeddings * attn_output).sum(-1)
         # loss =  criterion(outputs, targets)
 
@@ -141,11 +141,8 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
         contrastive_loss = custom_loss_function(layer_leafs, targets, attn_output, device)####
 
-        #print(contrastive_loss.requires_grad)
-        #print(contrastive_loss.grad_fn)
-        #print(f"Contrastive Loss: {contrastive_loss}")#
-        print(f"BCE loss: {loss}")
-        print(f"Loss Item: {loss.item()}")
+        print(f"Contrastive Loss: {float(contrastive_loss)}")#
+        print(f"BCE loss: {float(loss)}")
 
         constant =1
         loss = constant * contrastive_loss + loss
