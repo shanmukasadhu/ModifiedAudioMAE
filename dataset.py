@@ -127,7 +127,7 @@ def lookup_list(index_list, label_csv):
     return label_list
 
 class AudiosetDataset(Dataset):
-    def __init__(self, dataset_json_file, audio_conf, label_csv=None, use_fbank=False, fbank_dir=None, roll_mag_aug=False, load_video=False, mode='train'):
+    def __init__(self, data_aug, dataset_json_file, audio_conf, label_csv=None, use_fbank=False, fbank_dir=None, roll_mag_aug=False, load_video=False, mode='train'):
         """
         Dataset that manages audio recordings
         :param audio_conf: Dictionary containing the audio loading and preprocessing settings
@@ -165,7 +165,8 @@ class AudiosetDataset(Dataset):
         self.roll_mag_aug=roll_mag_aug
         print(f'number of classes: {self.label_num}')
         print(f'size of dataset {self.__len__()}')
-
+        self.data_aug = data_aug
+        print(f"Data Aug is: {self.data_aug}")
 
     def decode_data(self, np_data):
         datum = {}
@@ -202,24 +203,24 @@ class AudiosetDataset(Dataset):
         
         
         
-        
-        
-        freqm = torchaudio.transforms.FrequencyMasking(self.freqm)
-        timem = torchaudio.transforms.TimeMasking(self.timem)
-        #fbank = fbank.transpose(0,1).unsqueeze(0)
-        fbank = torch.transpose(fbank, 0, 1)
-        fbank = fbank.unsqueeze(0)
+        # If Data Augmentation is activated, then it will be performed in the training loop
+        if not self.data_aug:
+            freqm = torchaudio.transforms.FrequencyMasking(self.freqm)
+            timem = torchaudio.transforms.TimeMasking(self.timem)
+            #fbank = fbank.transpose(0,1).unsqueeze(0)
+            fbank = torch.transpose(fbank, 0, 1)
+            fbank = fbank.unsqueeze(0)
 
-         # 1, 128, 1024 (...,freq,time)
-        if self.freqm != 0:
-            fbank = freqm(fbank)
-        if self.timem != 0:
-            fbank = timem(fbank) # (..., freq, time)
-        fbank = torch.transpose(fbank.squeeze(), 0, 1) # time, freq
-        fbank = (fbank - self.norm_mean) / (self.norm_std * 2)
-        if self.noise == True: # default is false, true for spc
-            fbank = fbank + torch.rand(fbank.shape[0], fbank.shape[1]) * np.random.rand() / 10
-            fbank = torch.roll(fbank, np.random.randint(-10, 10), 0)
+            # 1, 128, 1024 (...,freq,time)
+            if self.freqm != 0:
+                fbank = freqm(fbank)
+            if self.timem != 0:
+                fbank = timem(fbank) # (..., freq, time)
+            fbank = torch.transpose(fbank.squeeze(), 0, 1) # time, freq
+            fbank = (fbank - self.norm_mean) / (self.norm_std * 2)
+            if self.noise == True: # default is false, true for spc
+                fbank = fbank + torch.rand(fbank.shape[0], fbank.shape[1]) * np.random.rand() / 10
+                fbank = torch.roll(fbank, np.random.randint(-10, 10), 0)
         # the output fbank shape is [time_frame_num, frequency_bins], e.g., [1024, 128]
         return fbank.unsqueeze(0), label_indices, ark_path
 
