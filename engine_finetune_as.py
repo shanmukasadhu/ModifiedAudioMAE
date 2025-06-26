@@ -17,7 +17,9 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from contrastiveloss_helperfunc import SupConLoss
+# from contrastiveloss_helperfunc import SupConLoss
+from contrast_single_positive import SupConLoss
+
 from timm.data import Mixup
 
 import util.misc as misc
