@@ -92,8 +92,6 @@ def custom_loss_function(leaf_nodes, targets, features, device):
         # Calculate Leaf Loss
         current_layer_loss = sup_con_loss(features = feats_layer.unsqueeze(1), mask=mask_labels)
 
-        leaf_loss.append(current_layer_loss)
-
         print(f"Layer {layer} number of event instances: {nnz}")
         print(f"Layer {layer} number of event classes: {torch.unique(labs).shape[0]}")
         print(f"Layer {layer} number of positive pairs: {int(mask_labels.sum())}")
