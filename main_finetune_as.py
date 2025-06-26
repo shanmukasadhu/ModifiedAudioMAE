@@ -192,7 +192,7 @@ def get_args_parser():
     parser.add_argument('--load_imgnet_pt', type=bool, default=False, help='when img_pt_ckpt, if load_imgnet_pt, use img_pt_ckpt to initialize audio branch, if not, keep audio branch random')
     parser.add_argument('--data_aug', type=bool, default=False)
     parser.add_argument('--sup_con_loss_weight', type=float, default=1.0, help='Weight for supervised contrastive loss.')
-    parser.add_argument('--label_dep_logits', type=bool, default=True, help='use label dependent representation for classification')
+    parser.add_argument('--label_dep_logits', action='store_true', help='use label dependent representation for classification')
 
     # Wandb Logging:
     parser.add_argument('--no_wandb', action='store_true', help='Disable WandB logging')
