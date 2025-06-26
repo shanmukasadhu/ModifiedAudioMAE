@@ -195,7 +195,7 @@ def get_args_parser():
     # Wandb Logging:
     parser.add_argument('--no_wandb', action='store_true', help='Disable WandB logging')
     parser.add_argument('--wandb_entity', type=str, default=None, help='wandb entity')
-    parser.add_argument('--wandb_name', type=str, default=None, help='wandb name')
+    parser.add_argument('--wandb_name', type=str, default="", help='wandb name')
     parser.add_argument('--wandb_project', type=str, default=None, help='wandb project')
 
     return parser
