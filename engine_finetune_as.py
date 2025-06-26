@@ -75,7 +75,7 @@ def custom_loss_function(leaf_nodes, targets, features, temperature, device):
         targets_layer = targets[:, node_list]
         labels_layer = labels_full[:, node_list]
 
-        # This is a 1D tensor.
+        # This is a 1D tensor, selecting representations of present events.
         labs = torch.masked_select(labels_layer, targets_layer==1)
         nnz = labs.shape[0]
         feats_layer = torch.masked_select(features[:, node_list, :], (targets_layer==1).unsqueeze(-1)).reshape(nnz, feat_dim)
