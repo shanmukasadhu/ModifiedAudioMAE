@@ -189,14 +189,14 @@ def get_args_parser():
     parser.add_argument('--load_imgnet_pt', type=bool, default=False, help='when img_pt_ckpt, if load_imgnet_pt, use img_pt_ckpt to initialize audio branch, if not, keep audio branch random')
     parser.add_argument('--data_aug', type=bool, default=False)
     parser.add_argument('--sup_con_loss_weight', type=float, default=1.0, help='Weight for supervised contrastive loss.')
+    parser.add_argument('--sup_con_loss_temperature', type=float, default=0.1, help='Temperature for supervised contrastive loss.')
     parser.add_argument('--label_dep_classification', action='store_true', help='use label dependent representation for classification')
 
     # Wandb Logging:
     parser.add_argument('--no_wandb', action='store_true', help='Disable WandB logging')
     parser.add_argument('--wandb_entity', type=str, default=None, help='wandb entity')
-    parser.add_argument('--wandb_name', type=str, default=None, help='wandb entity')
-    parser.add_argument('--wandb_project', type=str, default=None, help='wandb entity')
-
+    parser.add_argument('--wandb_name', type=str, default=None, help='wandb name')
+    parser.add_argument('--wandb_project', type=str, default=None, help='wandb project')
 
     return parser
 
@@ -240,9 +240,11 @@ def main(args):
     misc.init_distributed_mode(args)
 
     if not args.no_wandb:
-        wandb.init(project=args.wandb_project, entity=args.wandb_entity, config=args, resume='allow', name=args.wandb_name)
-
-
+        wandb_name = (args.wandb_name +
+                      "label_dep=" + str(args.label_dep_classification) +
+                      "_weight=" + str(args.sup_con_loss_weight) +
+                      "_temp=" + str(args.sup_con_loss_temperature))
+        wandb.init(project=args.wandb_project, entity=args.wandb_entity, config=args, resume='allow', name=wandb_name)
 
     print('job dir: {}'.format(os.path.dirname(os.path.realpath(__file__))))
     print("{}".format(args).replace(', ', ',\n'))
@@ -363,19 +365,16 @@ def main(args):
         drop_last=False
     )
 
-
-
-    # Reads label depths file and gets label depths
-    print("Loading label depths")
-    label_depths_file = pd.read_csv("label_depths_556.csv",usecols=["depth"])
-    label_depths556 = label_depths_file["depth"].tolist()
-    label_depths556=torch.Tensor(label_depths556)
+    # # Reads label depths file and gets label depths
+    # print("Loading label depths")
+    # label_depths_file = pd.read_csv("label_depths_556.csv",usecols=["depth"])
+    # label_depths556 = label_depths_file["depth"].tolist()
+    # label_depths556=torch.Tensor(label_depths556)
 
     # Load Layer leafs:
     print("Loading Layer Leafs")
     with open("layer_leafs.json","r") as f:
         layer_leafs = json.load(f)
-
 
     mixup_fn = None
     mixup_active = args.mixup > 0 or args.cutmix > 0. or args.cutmix_minmax is not None
