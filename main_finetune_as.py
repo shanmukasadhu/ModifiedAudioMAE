@@ -191,12 +191,13 @@ def get_args_parser():
     parser.add_argument('--replace_with_mae', type=bool, default=False, help='replace_with_mae')
     parser.add_argument('--load_imgnet_pt', type=bool, default=False, help='when img_pt_ckpt, if load_imgnet_pt, use img_pt_ckpt to initialize audio branch, if not, keep audio branch random')
     parser.add_argument('--data_aug', type=bool, default=False)
+    parser.add_argument('--sup_con_loss_weight', type=float, default=1.0, help='Weight for supervised contrastive loss.')
 
     # Wandb Logging:
-    parser.add_argument('--no_wandb', action='store_true', help='Disable WandB logging'); 
-    parser.add_argument('--wandb_entity', type=str, default=None, help='wandb entity');
-    parser.add_argument('--wandb_name', type=str, default=None, help='wandb entity');
-    parser.add_argument('--wandb_project', type=str, default=None, help='wandb entity');
+    parser.add_argument('--no_wandb', action='store_true', help='Disable WandB logging')
+    parser.add_argument('--wandb_entity', type=str, default=None, help='wandb entity')
+    parser.add_argument('--wandb_name', type=str, default=None, help='wandb entity')
+    parser.add_argument('--wandb_project', type=str, default=None, help='wandb entity')
 
 
     return parser

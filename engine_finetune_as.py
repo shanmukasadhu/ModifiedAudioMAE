@@ -150,8 +150,6 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         if data_iter_step % accum_iter == 0:
             lr_sched.adjust_learning_rate(optimizer, data_iter_step / len(data_loader) + epoch, args)
 
-#        print(f"Shape of targets: {targets.shape}")
-
         samples = samples.to(device, non_blocking=True)
         targets = targets.to(device, non_blocking=True)
 
@@ -159,23 +157,23 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         with torch.cuda.amp.autocast():
             outputs, feats  = model(samples, mask_t_prob=args.mask_t_prob, mask_f_prob=args.mask_f_prob)
             bce_loss = criterion(outputs, targets)
-
-        contrastive_loss = custom_loss_function(layer_leafs, targets, feats, device)####
-
-        print(f"Contrastive Loss: {float(contrastive_loss)}")#
         print(f"BCE loss: {float(bce_loss)}")
 
+        if args.sup_con_loss_weight:
+            assert feats is not None
+            contrastive_loss = custom_loss_function(layer_leafs, targets, feats, device)####
+            print(f"Contrastive Loss: {float(contrastive_loss)}")#
+        else:
+            contrastive_loss = 0.0
+
         # TODO: configure the coefficient.
-        constant = 1
-        z = (constant * contrastive_loss).item()
-        loss = constant * contrastive_loss + bce_loss
-        print(model.embedding.weight[:5,:5])
-        print(f"New loss: {loss}\n")
+        loss = bce_loss + args.sup_con_loss_weight * contrastive_loss
 
         loss_value = loss.item()
         if not math.isfinite(loss_value):
             print("Loss is {}, stopping training".format(loss_value))
             sys.exit(1)
+        print(f"New loss: {loss_value}\n")
 
         loss /= accum_iter
         loss_scaler(loss, optimizer, clip_grad=max_norm,
@@ -209,7 +207,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
     print("Averaged stats:", metric_logger)
-    return {k: meter.global_avg for k, meter in metric_logger.meters.items()}, z, bce_loss
+    return {k: meter.global_avg for k, meter in metric_logger.meters.items()}, float(contrastive_loss), float(bce_loss)
 
 
 @torch.no_grad()
