@@ -159,7 +159,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
             bce_loss = criterion(outputs, targets)
         print(f"BCE loss: {float(bce_loss)}")
 
-        if args.sup_con_loss_weight:
+        if args.label_dep_classification and args.sup_con_loss_weight:
             assert feats is not None
             contrastive_loss = custom_loss_function(layer_leafs, targets, feats, device)####
             print(f"Contrastive Loss: {float(contrastive_loss)}")#
