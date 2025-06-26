@@ -254,6 +254,6 @@ def evaluate(data_loader, model, device, dist_eval=False):
     AP = [stat['AP'] for stat in stats]
     mAP = np.mean([stat['AP'] for stat in stats])
     print("mAP: {:.6f}".format(mAP))
-    return {"mAP": mAP, "AP": AP}, bce_loss
+    return {"mAP": mAP, "AP": AP}, float(bce_loss)
 
 

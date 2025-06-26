@@ -505,7 +505,7 @@ def main(args):
         #         args=args
         #     )            
         # else:
-        train_stats, contrastive_loss_val, bce_loss_val = train_one_epoch(
+        train_stats, contrastive_loss_val, bce_train_loss = train_one_epoch(
                 model, criterion, data_loader_train,
                 optimizer, device, epoch, loss_scaler, layer_leafs, audio_conf_train,args.data_aug,
                 args.clip_grad, mixup_fn,
@@ -535,7 +535,7 @@ def main(args):
                         'n_parameters': n_parameters}
         wandb_stats = {'epoch': epoch,'Test mAP': test_stats['mAP'],'Train_lr': log_stats['train_lr'],
                        'Train_loss': log_stats['train_loss'],
-                       'BCE_train_loss': bce_loss_val, 'Contrastive_loss':contrastive_loss_val, 'BCE_eval_loss': bce_eval_loss}
+                       'BCE_train_loss': bce_train_loss, 'Contrastive_loss':contrastive_loss_val, 'BCE_eval_loss': bce_eval_loss}
         
         if not args.no_wandb:
             wandb.log(wandb_stats)
