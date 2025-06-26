@@ -13,16 +13,12 @@ import math
 import sys
 from typing import Iterable, Optional
 import numpy as np
-import torch
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 
 from contrastiveloss_helperfunc import SupConLoss
-import json
 from timm.data import Mixup
-from timm.utils import accuracy
 
 import util.misc as misc
 import util.lr_sched as lr_sched
@@ -57,9 +53,6 @@ def specAug(samples, audio_conf):
 
     samples = torch.stack(return_samples, dim=0)
     return samples
-
-
-
 
 
 def custom_loss_function(leaf_nodes, labels, features, device):
@@ -137,7 +130,6 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         print('log_dir: {}'.format(log_writer.log_dir))
 
     for data_iter_step, (samples, targets, _vids) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
-
 
         # Perform 2x Augmentations:
         if data_aug:
@@ -255,5 +247,3 @@ def evaluate(data_loader, model, device, dist_eval=False):
     mAP = np.mean([stat['AP'] for stat in stats])
     print("mAP: {:.6f}".format(mAP))
     return {"mAP": mAP, "AP": AP}, float(bce_loss)
-
-
