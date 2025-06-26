@@ -58,7 +58,7 @@ def specAug(samples, audio_conf):
 def custom_loss_function(leaf_nodes, targets, features, device):
     batch_size, num_classes = targets.shape
     feat_dim = features.shape[2]
-    labels_full = torch.arange(num_classes).unsqeeze(0).repeat(batch_size, 1)
+    labels_full = torch.arange(num_classes).unsqueeze(0).repeat(batch_size, 1)
 
     layer_loss = []
     # Later: take this out and place in main_finetune_as.py
