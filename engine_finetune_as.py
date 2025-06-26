@@ -58,7 +58,7 @@ def specAug(samples, audio_conf):
 def custom_loss_function(leaf_nodes, targets, features, device):
     batch_size, num_classes = targets.shape
     feat_dim = features.shape[2]
-    labels_full = torch.arange(num_classes).unsqueeze(0).repeat(batch_size, 1)
+    labels_full = torch.arange(num_classes).unsqueeze(0).repeat(batch_size, 1).to(device)
 
     layer_loss = []
     # Later: take this out and place in main_finetune_as.py
@@ -71,34 +71,33 @@ def custom_loss_function(leaf_nodes, targets, features, device):
     for l in range(0, max_depths+1):
         layer = max_depths-l # We start from the bottom
 
-        import pdb;pdb.set_trace()
-        lab_list = list(leaf_nodes[str(layer+1)])
-        targets_layer = targets[:, lab_list]
+        node_list = leaf_nodes[str(layer+1)]
+        targets_layer = targets[:, node_list]
+        labels_layer = labels_full[:, node_list]
 
         # This is a 1D tensor.
-        labs = torch.mask_select(labels_full, label_layer==1)
-        nnz = labels.shape[0]
-        if nnz == 0:
-            continue
-
-        feats_layer = torch.mask_select(features, (label_layer==1).unsqueeze(-1)).reshape(nnz, feat_dim)
+        labs = torch.masked_select(labels_layer, targets_layer==1)
+        nnz = labs.shape[0]
+        feats_layer = torch.masked_select(features[:, node_list, :], (targets_layer==1).unsqueeze(-1)).reshape(nnz, feat_dim)
 
         # mask_ij is True, if i and j have the same labels.
-        mask_labels = labs.unsqueeze(1) == labs.unsqeeze(0)
+        mask_labels = labs.unsqueeze(1) == labs.unsqueeze(0)
         # remove self-positive pairs.
-        mask_diagonal = torch.eye(*mask_labels.shape, dtype=torch.bool, device=labels.device)
+        mask_diagonal = torch.eye(*mask_labels.shape, dtype=torch.bool, device=device)
         mask_labels.masked_fill_(mask_diagonal, 0)
 
-        mask_labels=mask_labels.to(device)
-        #print(f"Nonzero elements in mask_labels: {mask_labels.sum()}")
+        if mask_labels.sum() == 0:
+            continue
 
         # Calculate Leaf Loss
-        # print(f"Mask Label Sum: {mask_labels.sum()}")
         current_layer_loss = sup_con_loss(features = feats_layer, mask=mask_labels)
 
         leaf_loss.append(current_layer_loss)
 
-        print(f"Layer {layer} nnz: {nnz}")
+        print(f"Layer {layer} number of event instances: {nnz}")
+        print(f"Layer {layer} number of event classes: {torch.unique(labs).shape[0]}")
+        print(f"Layer {layer} number of positive pairs: {int(mask_labels.sum())}")
+
         print(f"Layer {layer} loss: {current_layer_loss}")
 
         # ADD A PENALTY LOSS DUE TO LAYER
