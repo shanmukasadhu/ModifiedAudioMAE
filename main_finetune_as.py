@@ -192,6 +192,7 @@ def get_args_parser():
     parser.add_argument('--load_imgnet_pt', type=bool, default=False, help='when img_pt_ckpt, if load_imgnet_pt, use img_pt_ckpt to initialize audio branch, if not, keep audio branch random')
     parser.add_argument('--data_aug', type=bool, default=False)
     parser.add_argument('--sup_con_loss_weight', type=float, default=1.0, help='Weight for supervised contrastive loss.')
+    parser.add_argument('--label_dep_logits', type=bool, default=True, help='use label dependent representation for classification')
 
     # Wandb Logging:
     parser.add_argument('--no_wandb', action='store_true', help='Disable WandB logging')
@@ -395,6 +396,7 @@ def main(args):
         global_pool=args.global_pool,
         mask_2d=args.mask_2d,
         use_custom_patch=args.use_custom_patch,
+        label_dep_logits=args.label_dep_logits,
         ## remove video part for A-MAE
         #load_video=args.load_video,
         # n_frm=args.n_frm,

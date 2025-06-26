@@ -36,7 +36,7 @@ class Projector(nn.Module):
 class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
     """ Vision Transformer with support for global average pooling
     """
-    def __init__(self, global_pool=False, mask_2d=True, use_custom_patch=False, **kwargs):
+    def __init__(self, global_pool=False, mask_2d=True, use_custom_patch=False, label_dep_logits=True, **kwargs):
         super(VisionTransformer, self).__init__(**kwargs)
 
         self.global_pool = global_pool
@@ -54,6 +54,7 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
         self.embedding = nn.Embedding(self.num_classes, embed_dim)
         self.multihead_attn = nn.MultiheadAttention(embed_dim=embed_dim, num_heads=8, batch_first=True)
         self.label_dep_projector = Projector(input_size=embed_dim, hidden_size=1024, output_size=self.num_classes)
+        self.label_dep_logits = label_dep_logits
 
     def forward_features(self, x):
         B = x.shape[0]
@@ -199,12 +200,14 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
 
 
     # overwrite original timm
-    def forward(self, x, mask_t_prob=0.0, mask_f_prob=0.0, classify_label_dep_emb=True):
+    def forward(self, x, mask_t_prob=0.0, mask_f_prob=0.0):
         if mask_t_prob > 0.0 or mask_f_prob > 0.0:
             outcome, x_seq  = self.forward_features_mask(x, mask_t_prob=mask_t_prob, mask_f_prob=mask_f_prob)
         else:
             outcome, x_seq  = self.forward_features(x)
         logits_mean_pool = self.head(outcome)
+        if not self.label_dep_logits:
+            return logits_mean_pool, None
 
         x_seq = self.seq_norm(x_seq)
         batch_size = x.shape[0]
@@ -215,11 +218,7 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
         # Perform Cross Attention between Label Embeddings and masked audio samples.
         emb_label_dep, _ = self.multihead_attn(label_embeddings, x_seq, x_seq)
         logits_label_dep = self.label_dep_projector(emb_label_dep)
-
-        if classify_label_dep_emb:
-            return logits_label_dep, emb_label_dep
-        else:
-            return logits_mean_pool, emb_label_dep
+        return logits_label_dep, emb_label_dep
 
 
 def vit_small_patch16(**kwargs):
