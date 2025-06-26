@@ -65,7 +65,7 @@ def specAug(samples, audio_conf):
 def custom_loss_function(leaf_nodes, labels, features, device):
     layer_loss = []
     # Later: take this out and place in main_finetune_as.py
-    sup_con_loss = SupConLoss(temperature=0.1)
+    sup_con_loss = SupConLoss(temperature=0.05)
     max_depths = 5
 
     features = F.normalize(features, dim=-1)
@@ -233,6 +233,8 @@ def evaluate(data_loader, model, device, dist_eval=False):
         # compute output
         with torch.cuda.amp.autocast():
             output, x_tran = model(images)
+            # Calculate BCE Loss
+            bce_loss = criterion(output, target)
             # remark: 
             # 1. use concat_all_gather and --dist_eval for faster eval by distributed load over gpus
             # 2. otherwise comment concat_all_gather and remove --dist_eval one every gpu
@@ -252,6 +254,6 @@ def evaluate(data_loader, model, device, dist_eval=False):
     AP = [stat['AP'] for stat in stats]
     mAP = np.mean([stat['AP'] for stat in stats])
     print("mAP: {:.6f}".format(mAP))
-    return {"mAP": mAP, "AP": AP}
+    return {"mAP": mAP, "AP": AP}, bce_loss
 
 

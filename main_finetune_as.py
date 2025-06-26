@@ -251,7 +251,7 @@ def main(args):
     print("{}".format(args).replace(', ', ',\n'))
     
     # Default to GPU 1
-    args.device = 'cuda:0'
+    args.device = 'cuda:3'
     device = torch.device(args.device)
 
     # fix the seed for reproducibility
@@ -517,7 +517,7 @@ def main(args):
                 args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
                 loss_scaler=loss_scaler, epoch=epoch)
         if epoch >= args.first_eval_ep:
-            test_stats = evaluate(data_loader_val, model, device, args.dist_eval)
+            test_stats,bce_eval_loss = evaluate(data_loader_val, model, device, args.dist_eval)
             print(f"mAP of the network on the {len(dataset_val)} test images: {test_stats['mAP']:.4f}")
             max_mAP = max(max_mAP, test_stats["mAP"])
             print(f'Max mAP: {max_mAP:.4f}')
@@ -534,7 +534,7 @@ def main(args):
                         'n_parameters': n_parameters}
         wandb_stats = {'epoch': epoch,'Test mAP': test_stats['mAP'],'Train_lr': log_stats['train_lr'],
                        'Train_loss': log_stats['train_loss'],
-                       'BCE_loss': bce_loss_val, 'Contrastive_loss':contrastive_loss_val}
+                       'BCE_train_loss': bce_loss_val, 'Contrastive_loss':contrastive_loss_val, 'BCE_eval_loss': bce_eval_loss}
         
         if not args.no_wandb:
             wandb.log(wandb_stats)
