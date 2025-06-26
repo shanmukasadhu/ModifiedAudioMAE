@@ -36,7 +36,7 @@ class Projector(nn.Module):
 class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
     """ Vision Transformer with support for global average pooling
     """
-    def __init__(self, global_pool=False, mask_2d=True, use_custom_patch=False, label_dep_logits=True, **kwargs):
+    def __init__(self, global_pool=False, mask_2d=True, use_custom_patch=False, label_dep_classification=True, **kwargs):
         super(VisionTransformer, self).__init__(**kwargs)
 
         self.global_pool = global_pool
@@ -54,7 +54,7 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
         self.embedding = nn.Embedding(self.num_classes, embed_dim)
         self.multihead_attn = nn.MultiheadAttention(embed_dim=embed_dim, num_heads=8, batch_first=True)
         self.label_dep_projector = Projector(input_size=embed_dim, hidden_size=1024, output_size=self.num_classes)
-        self.label_dep_logits = label_dep_logits
+        self.label_dep_classification = label_dep_classification
 
     def forward_features(self, x):
         B = x.shape[0]
@@ -206,7 +206,7 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
         else:
             outcome, x_seq  = self.forward_features(x)
         logits_mean_pool = self.head(outcome)
-        if not self.label_dep_logits:
+        if not self.label_dep_classification:
             return logits_mean_pool, None
 
         x_seq = self.seq_norm(x_seq)
