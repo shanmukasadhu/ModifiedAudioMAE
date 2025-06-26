@@ -90,7 +90,7 @@ def custom_loss_function(leaf_nodes, targets, features, device):
             continue
 
         # Calculate Leaf Loss
-        current_layer_loss = sup_con_loss(features = feats_layer, mask=mask_labels)
+        current_layer_loss = sup_con_loss(features = feats_layer.squeeze(1), mask=mask_labels)
 
         leaf_loss.append(current_layer_loss)
 
