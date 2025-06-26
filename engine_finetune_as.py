@@ -55,55 +55,55 @@ def specAug(samples, audio_conf):
     return samples
 
 
-def custom_loss_function(leaf_nodes, labels, features, device):
+def custom_loss_function(leaf_nodes, targets, features, device):
+    batch_size, num_classes = targets.shape
+    feat_dim = features.shape[2]
+    labels_full = torch.arange(num_classes).unsqeeze(0).repeat(batch_size, 1)
+
     layer_loss = []
     # Later: take this out and place in main_finetune_as.py
     sup_con_loss = SupConLoss(temperature=0.05)
     max_depths = 5
 
+    # TODO: make this configurable.
     features = F.normalize(features, dim=-1)
 
     for l in range(0, max_depths+1):
         layer = max_depths-l # We start from the bottom
 
-        # Iterate through each leaf
-        leaf_loss = []
-        x = []
-        for k in leaf_nodes[str(layer+1)]:
+        import pdb;pdb.set_trace()
+        lab_list = list(leaf_nodes[str(layer+1)])
+        targets_layer = targets[:, lab_list]
 
-            labels_k = labels[:, k]
-            # mask_ij is True, if both i and j have label 1.
-            mask_labels = (labels_k[:, None] == 1) & (labels_k[None, :] == 1)
-            # remove self-positive pairs.
-            mask_diagonal = torch.eye(*mask_labels.shape, dtype=torch.bool, device=labels.device)
-            mask_labels.masked_fill_(mask_diagonal, 0)
-            # Skip classes without data.
-            if mask_labels.sum() == 0:
-                continue
+        # This is a 1D tensor.
+        labs = torch.mask_select(labels_full, label_layer==1)
+        nnz = labels.shape[0]
+        if nnz == 0:
+            continue
 
-            x.append(mask_labels.sum().item())
- #           print(labels[0])
- #           print(mask_labels[0])
-            mask_labels=mask_labels.to(device)
-            #print(f"Nonzero elements in mask_labels: {mask_labels.sum()}")
+        feats_layer = torch.mask_select(features, (label_layer==1).unsqueeze(-1)).reshape(nnz, feat_dim)
 
-            sliced_feature = features[:, k:k+1, :]
-            sliced_feature = sliced_feature.to(device)
+        # mask_ij is True, if i and j have the same labels.
+        mask_labels = labs.unsqueeze(1) == labs.unsqeeze(0)
+        # remove self-positive pairs.
+        mask_diagonal = torch.eye(*mask_labels.shape, dtype=torch.bool, device=labels.device)
+        mask_labels.masked_fill_(mask_diagonal, 0)
 
-            # Calculate Leaf Loss
-            # print(f"Mask Label Sum: {mask_labels.sum()}")
-            layer_leaf_loss = sup_con_loss(features = sliced_feature, mask=mask_labels).to(device)
-            #layer_leaf_loss.to(device)
+        mask_labels=mask_labels.to(device)
+        #print(f"Nonzero elements in mask_labels: {mask_labels.sum()}")
 
-            leaf_loss.append(layer_leaf_loss)
+        # Calculate Leaf Loss
+        # print(f"Mask Label Sum: {mask_labels.sum()}")
+        current_layer_loss = sup_con_loss(features = feats_layer, mask=mask_labels)
 
-        print(f"Layer {layer} mask_labels sum: {sum(x)/len(x)}")
+        leaf_loss.append(current_layer_loss)
+
+        print(f"Layer {layer} nnz: {nnz}")
+        print(f"Layer {layer} loss: {current_layer_loss}")
+
         # ADD A PENALTY LOSS DUE TO LAYER
-        # print(leaf_loss)
-        current_layer_loss = sum(leaf_loss)/len(leaf_loss)
-       # print(f'current_layer_loss={current_layer_loss}')
         current_penalty = 1 #/(max_depths - layer +1)   #np.exp(1/((max_depths-layer)+1))
-        layer_loss_penalty = current_layer_loss*current_penalty
+        layer_loss_penalty = current_layer_loss * current_penalty
         layer_loss.append(layer_loss_penalty)
          
     return sum(layer_loss)
