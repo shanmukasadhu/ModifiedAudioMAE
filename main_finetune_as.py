@@ -22,7 +22,6 @@ import torch.nn as nn
 import torch.backends.cudnn as cudnn
 from torch.utils.tensorboard import SummaryWriter
 
-import timm
 
 # assert timm.__version__ == "0.3.2" # version check
 from timm.models.layers import trunc_normal_
@@ -33,14 +32,12 @@ from timm.models.layers import to_2tuple
 import util.lr_decay as lrd
 import util.misc as misc
 from util.datasets import build_dataset
-from util.pos_embed import interpolate_pos_embed, interpolate_pos_embed_audio, interpolate_patch_embed_audio, interpolate_pos_embed_img2audio
 from util.misc import NativeScalerWithGradNormCount as NativeScaler
 
 import models_vit
 
 from engine_finetune_as import train_one_epoch, evaluate #, train_one_epoch_av, evaluate_av
 from dataset import AudiosetDataset, DistributedWeightedSampler, DistributedSamplerWrapper
-from timm.models.vision_transformer import PatchEmbed
 
 from torch.utils.data import WeightedRandomSampler
 
@@ -251,7 +248,6 @@ def main(args):
     print("{}".format(args).replace(', ', ',\n'))
     
     # Default to GPU 1
-    args.device = 'cuda:3'
     device = torch.device(args.device)
 
     # fix the seed for reproducibility
