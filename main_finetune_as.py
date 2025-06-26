@@ -523,6 +523,7 @@ def main(args):
             print(f'Max mAP: {max_mAP:.4f}')
         else:
             test_stats ={'mAP': 0.0}
+            bce_eval_loss = 0.0
             print(f'too new to evaluate!')
 
         if log_writer is not None:
