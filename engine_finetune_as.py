@@ -55,14 +55,14 @@ def specAug(samples, audio_conf):
     return samples
 
 
-def custom_loss_function(leaf_nodes, targets, features, device):
+def custom_loss_function(leaf_nodes, targets, features, temperature, device):
     batch_size, num_classes = targets.shape
     feat_dim = features.shape[2]
     labels_full = torch.arange(num_classes).unsqueeze(0).repeat(batch_size, 1).to(device)
 
     layer_loss = []
     # Later: take this out and place in main_finetune_as.py
-    sup_con_loss = SupConLoss(temperature=0.05)
+    sup_con_loss = SupConLoss(temperature=temperature)
     max_depths = 5
 
     # TODO: make this configurable.
@@ -150,8 +150,8 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
         if args.label_dep_classification and args.sup_con_loss_weight:
             assert feats is not None
-            contrastive_loss = custom_loss_function(layer_leafs, targets, feats, device)####
-            print(f"Contrastive Loss: {float(contrastive_loss)}")#
+            contrastive_loss = custom_loss_function(layer_leafs, targets, feats, args.sup_con_loss_temperature, device)
+            print(f"Contrastive Loss: {float(contrastive_loss)}")
         else:
             contrastive_loss = 0.0
 
