@@ -187,10 +187,10 @@ def get_args_parser():
     parser.add_argument('--n_frm', default=6, type=int, help='num of frames for video')
     parser.add_argument('--replace_with_mae', type=bool, default=False, help='replace_with_mae')
     parser.add_argument('--load_imgnet_pt', type=bool, default=False, help='when img_pt_ckpt, if load_imgnet_pt, use img_pt_ckpt to initialize audio branch, if not, keep audio branch random')
-    parser.add_argument('--data_aug', type=bool, default=False)
+    parser.add_argument('--data_aug', action="store_true", default=False, help='augment to get two copies of same input in minibatch.')
     parser.add_argument('--sup_con_loss_weight', type=float, default=1.0, help='Weight for supervised contrastive loss.')
     parser.add_argument('--sup_con_loss_temperature', type=float, default=0.1, help='Temperature for supervised contrastive loss.')
-    parser.add_argument('--label_dep_classification', action='store_true', help='use label dependent representation for classification')
+    parser.add_argument('--label_dep_classification', action='store_true', default=False, help='use label dependent representation for classification')
 
     # Wandb Logging:
     parser.add_argument('--no_wandb', action='store_true', help='Disable WandB logging')
@@ -243,7 +243,8 @@ def main(args):
         wandb_name = (args.wandb_name +
                       "label_dep=" + str(args.label_dep_classification) +
                       "_weight=" + str(args.sup_con_loss_weight) +
-                      "_temp=" + str(args.sup_con_loss_temperature))
+                      "_temp=" + str(args.sup_con_loss_temperature) +
+                      '_aug=' + str(args.data_aug))
         wandb.init(project=args.wandb_project, entity=args.wandb_entity, config=args, resume='allow', name=wandb_name)
 
     print('job dir: {}'.format(os.path.dirname(os.path.realpath(__file__))))
