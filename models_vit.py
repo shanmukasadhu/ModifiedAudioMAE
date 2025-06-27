@@ -219,8 +219,10 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
         # Perform Cross Attention between Label Embeddings and masked audio samples.
         emb_label_dep, _ = self.multihead_attn(label_embeddings, x_seq, x_seq)
         logits_label_dep = self.label_dep_projector(emb_label_dep)
-        # return logits_label_dep, emb_label_dep
-        return logits_mean_pool, outcome.unsqueeze(1).repeat(1, self.num_classes, 1)
+        return logits_label_dep, emb_label_dep
+
+        # # Use mean as each label dependent representation.
+        # return logits_mean_pool, outcome.unsqueeze(1).repeat(1, self.num_classes, 1)
 
 
 def vit_small_patch16(**kwargs):
