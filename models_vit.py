@@ -23,7 +23,8 @@ class Projector(nn.Module):
         super(Projector, self).__init__()
         # self.hidden_layer = nn.Linear(input_size, hidden_size)
         # self.activation = nn.ReLU()
-        self.output_layer = nn.Linear(hidden_size, output_size)
+        # self.output_layer = nn.Linear(hidden_size, output_size)
+        self.output_layer = nn.Linear(input_size, output_size)
 
     def forward(self, x):
         # x = self.hidden_layer(x)
