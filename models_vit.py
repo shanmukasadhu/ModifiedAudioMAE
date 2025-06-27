@@ -21,13 +21,13 @@ from util.patch_embed import PatchEmbed_new, PatchEmbed3D_new
 class Projector(nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
         super(Projector, self).__init__()
-        self.hidden_layer = nn.Linear(input_size, hidden_size)
-        self.activation = nn.ReLU()
+        # self.hidden_layer = nn.Linear(input_size, hidden_size)
+        # self.activation = nn.ReLU()
         self.output_layer = nn.Linear(hidden_size, output_size)
 
     def forward(self, x):
-        x = self.hidden_layer(x)
-        x = self.activation(x)
+        # x = self.hidden_layer(x)
+        # x = self.activation(x)
         x = (self.output_layer.weight.unsqueeze(0) * x).sum(-1)
         x = x + self.output_layer.bias.unsqueeze(0)
         return x
