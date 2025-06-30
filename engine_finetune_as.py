@@ -56,6 +56,24 @@ def specAug(samples, audio_conf):
     samples = torch.stack(return_samples, dim=0)
     return samples
 
+def consistency_reg(a, b):
+    sig_a = torch.sigmoid(a)
+    sig_b = torch.sigmoid(b)
+
+    
+    eps = 1e-7
+    #sig_a = sig_a.clamp(epsilon, 1 - epsilon).detach()
+    #sig_b = sig_b.clamp(epsilon, 1 - epsilon)
+
+    sig_a_detach = sig_a.detach()
+    a_b = -sig_a_detach * (torch.log(sig_b + eps)) - (1-sig_a_detach) * (torch.log(1-sig_b+eps))
+    sig_b_detach = sig_b.detach()
+    b_a = -sig_b_detach * (torch.log(sig_a + eps)) - (1-sig_b_detach) * (torch.log(1-sig_a+eps))
+
+    loss = 0.5 * (a_b + b_a).mean()
+    return loss
+
+
 
 def custom_loss_function(leaf_nodes, targets, features, temperature, device):
     batch_size, num_classes = targets.shape
@@ -129,14 +147,12 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         print('log_dir: {}'.format(log_writer.log_dir))
 
     for data_iter_step, (samples, targets, _vids) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
-
+        print(f"samples.shape: {samples.shape}")
         # Perform 2x Augmentations:
         if data_aug:
-            samples = specAug(torch.cat([samples, samples], dim = 0),audio_conf)
+            samples = specAug(torch.cat([samples,samples]), audio_conf)
             targets = torch.cat([targets, targets], dim = 0)
             print(f"Shape of samples {samples.shape} and target {targets.shape}  doubled")
-
-
         # we use a per iteration (instead of per epoch) lr scheduler
         if data_iter_step % accum_iter == 0:
             lr_sched.adjust_learning_rate(optimizer, data_iter_step / len(data_loader) + epoch, args)
@@ -148,7 +164,22 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         with torch.cuda.amp.autocast():
             outputs, feats  = model(samples, mask_t_prob=args.mask_t_prob, mask_f_prob=args.mask_f_prob)
             bce_loss = criterion(outputs, targets)
+        batch_size = outputs.shape[0]//2
+
+        if data_aug and args.consistency_regularization:
+            a = outputs[batch_size:]
+            b = outputs[:batch_size]
+            consistency_reg_loss = consistency_reg(a,b)
+            consistency_constant = args.consistency_constant
+        else:
+            consistency_reg_loss = 0
+
+
+        print(f"Consistency Reg Loss: {consistency_reg_loss}")
         print(f"BCE loss: {float(bce_loss)}")
+        bce_cons_loss = bce_loss + (consistency_reg_loss * consistency_constant)
+        print(f"BCE + Constiency_Regulatizaton: {bce_cons_loss}")
+
 
         if args.label_dep_classification and args.sup_con_loss_weight:
             assert feats is not None
@@ -158,7 +189,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
             contrastive_loss = 0.0
 
         # TODO: configure the coefficient.
-        loss = bce_loss + args.sup_con_loss_weight * contrastive_loss
+        loss = bce_cons_loss + args.sup_con_loss_weight * contrastive_loss
 
         loss_value = loss.item()
         if not math.isfinite(loss_value):

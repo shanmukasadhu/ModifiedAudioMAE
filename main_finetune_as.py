@@ -161,8 +161,8 @@ def get_args_parser():
     parser.add_argument("--label_csv", type=str, default='/checkpoint/berniehuang/ast/egs/audioset/data/class_labels_indices.csv', help="csv with class labels")
     parser.add_argument("--weight_csv", type=str, default='/checkpoint/berniehuang/mae/data/audioset/weight_train_all.csv', help="weight file")
     
-    parser.add_argument('--freqm', help='frequency mask max length', type=int, default=192)
-    parser.add_argument('--timem', help='time mask max length', type=int, default=48)
+    parser.add_argument('--freqm', help='frequency mask max length', type=int, default=48)
+    parser.add_argument('--timem', help='time mask max length', type=int, default=192)
     #parser.add_argument("--mixup", type=float, default=0, help="how many (0-1) samples need to be mixup during training")
     parser.add_argument("--dataset", type=str, default="audioset", help="the dataset used", choices=["audioset", "esc50", "speechcommands", "k400"])
     parser.add_argument("--use_fbank", type=bool, default=False)
@@ -191,6 +191,9 @@ def get_args_parser():
     parser.add_argument('--sup_con_loss_weight', type=float, default=1.0, help='Weight for supervised contrastive loss.')
     parser.add_argument('--sup_con_loss_temperature', type=float, default=0.1, help='Temperature for supervised contrastive loss.')
     parser.add_argument('--label_dep_classification', action='store_true', default=False, help='use label dependent representation for classification')
+    parser.add_argument('--consistency_regularization', action='store_true', default=False, help = 'use consistency regularization')
+    parser.add_argument('--consistency_constant', type=float, default=1.0, help = 'Constant for consistency regularization')
+
 
     # Wandb Logging:
     parser.add_argument('--no_wandb', action='store_true', help='Disable WandB logging')
@@ -270,8 +273,8 @@ def main(args):
         multilabel_dataset = {'audioset': True, 'esc50': False, 'k400': False, 'speechcommands': True}
         audio_conf_train = {'num_mel_bins': 128, 
                       'target_length': target_length[args.dataset], 
-                      'freqm': 48,
-                      'timem': 192,
+                      'freqm': args.freqm,
+                      'timem': args.timem,
                       'mixup': args.mixup,
                       'dataset': args.dataset,
                       'mode':'train',
