@@ -13,7 +13,7 @@ import math
 import sys
 from typing import Iterable, Optional
 import numpy as np
-
+import torchvision
 import torch
 import torch.nn.functional as F
 
@@ -26,6 +26,7 @@ import util.misc as misc
 import util.lr_sched as lr_sched
 from util.stat import calculate_stats, concat_all_gather
 
+
 def specAug(samples, audio_conf):
     freqm = audio_conf.get('freqm')
     timem = audio_conf.get('timem')
@@ -34,7 +35,8 @@ def specAug(samples, audio_conf):
     freqm_mask = torchaudio.transforms.FrequencyMasking(freqm)
     timem_mask = torchaudio.transforms.TimeMasking(timem)
     noise = audio_conf.get('noise')
-
+    horizontal_flip = torchvision.transforms.RandomHorizontalFlip(p=0.5)
+    random_erasing = torchvision.transforms.RandomErasing(p=0.25)
 
     return_samples = []
 
@@ -46,6 +48,12 @@ def specAug(samples, audio_conf):
             fbank = freqm_mask(fbank)
         if timem != 0:
             fbank = timem_mask(fbank)
+        # Horizontal Flip:
+        #fbank = horizontal_flip(fbank)
+        # Random Erasing:
+#        fbank = random_erasing(fbank)
+
+
         fbank = fbank.squeeze().transpose(0, 1)  # back to (1024, 128)
         fbank = (fbank - norm_mean) / (norm_std * 2)
         if noise == True:
@@ -56,15 +64,12 @@ def specAug(samples, audio_conf):
     samples = torch.stack(return_samples, dim=0)
     return samples
 
+
 def consistency_reg(a, b):
     sig_a = torch.sigmoid(a)
     sig_b = torch.sigmoid(b)
 
-    
     eps = 1e-7
-    #sig_a = sig_a.clamp(epsilon, 1 - epsilon).detach()
-    #sig_b = sig_b.clamp(epsilon, 1 - epsilon)
-
     sig_a_detach = sig_a.detach()
     a_b = -sig_a_detach * (torch.log(sig_b + eps)) - (1-sig_a_detach) * (torch.log(1-sig_b+eps))
     sig_b_detach = sig_b.detach()
@@ -72,6 +77,16 @@ def consistency_reg(a, b):
 
     loss = 0.5 * (a_b + b_a).mean()
     return loss
+
+def consistency_reg_n(parts):
+    count=0
+    loss=0
+    for i in range(len(parts)):
+        for j in range(i+1,len(parts)):
+            loss+= consistency_reg(parts[i],parts[j])
+            count+=1
+    print(f"Loss: {loss}, Count:{count}, Loss/Count: {loss/count}")
+    return loss/count
 
 
 
@@ -94,6 +109,8 @@ def custom_loss_function(leaf_nodes, targets, features, temperature, device):
         node_list = leaf_nodes[str(layer+1)]
         targets_layer = targets[:, node_list]
         labels_layer = labels_full[:, node_list]
+
+        # exp(T * T^T)/temp where T=targets_layer
 
         # This is a 1D tensor, selecting representations of present events.
         labs = torch.masked_select(labels_layer, targets_layer==1)
@@ -150,9 +167,15 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         print(f"samples.shape: {samples.shape}")
         # Perform 2x Augmentations:
         if data_aug:
-            samples = specAug(torch.cat([samples,samples]), audio_conf)
-            targets = torch.cat([targets, targets], dim = 0)
-            print(f"Shape of samples {samples.shape} and target {targets.shape}  doubled")
+            lensamples = len(samples)
+            lentargets = len(targets)
+            for i in range(args.num_augs-1):
+                samples = torch.cat([samples,samples[:lensamples]])
+                targets = torch.cat([targets,targets[:lentargets]],dim=0)
+            samples = specAug(samples,audio_conf)
+                #samples = specAug(torch.cat([samples,samples,samples,samples]), audio_conf)
+                #targets = torch.cat([targets,targets,targets,targets], dim = 0)
+            print(f"Shape of samples {samples.shape} and target {targets.shape} have been augmented {args.num_augs} times.")
         # we use a per iteration (instead of per epoch) lr scheduler
         if data_iter_step % accum_iter == 0:
             lr_sched.adjust_learning_rate(optimizer, data_iter_step / len(data_loader) + epoch, args)
@@ -164,15 +187,15 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         with torch.cuda.amp.autocast():
             outputs, feats  = model(samples, mask_t_prob=args.mask_t_prob, mask_f_prob=args.mask_f_prob)
             bce_loss = criterion(outputs, targets)
-        batch_size = outputs.shape[0]//2
 
         if data_aug and args.consistency_regularization:
-            a = outputs[batch_size:]
-            b = outputs[:batch_size]
-            consistency_reg_loss = consistency_reg(a,b)
+            batch_size = outputs.shape[0] // args.num_augs
+            parts = torch.split(outputs,batch_size)
+            consistency_reg_loss = consistency_reg_n(parts)
             consistency_constant = args.consistency_constant
         else:
             consistency_reg_loss = 0
+            consistency_constant = 0
 
 
         print(f"Consistency Reg Loss: {consistency_reg_loss}")

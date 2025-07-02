@@ -193,7 +193,7 @@ def get_args_parser():
     parser.add_argument('--label_dep_classification', action='store_true', default=False, help='use label dependent representation for classification')
     parser.add_argument('--consistency_regularization', action='store_true', default=False, help = 'use consistency regularization')
     parser.add_argument('--consistency_constant', type=float, default=1.0, help = 'Constant for consistency regularization')
-
+    parser.add_argument('--num_augs', type=int, default=2, help = 'Number of augmentations')
 
     # Wandb Logging:
     parser.add_argument('--no_wandb', action='store_true', help='Disable WandB logging')
@@ -511,10 +511,10 @@ def main(args):
                 log_writer=log_writer,
                 args=args
             )
-        if args.output_dir and epoch %10==0:
+        if args.output_dir and epoch %59==0:
             misc.save_model(
                 args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
-                loss_scaler=loss_scaler, epoch=epoch)
+                loss_scaler=loss_scaler, epoch=epoch,name_of_exp=f"{args.num_augs}augablation")
         if epoch >= args.first_eval_ep:
             test_stats,bce_eval_loss = evaluate(data_loader_val, model, device, args.dist_eval)
             print(f"mAP of the network on the {len(dataset_val)} test images: {test_stats['mAP']:.4f}")
