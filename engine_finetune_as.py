@@ -53,7 +53,6 @@ def specAug(samples, audio_conf):
         # Random Erasing:
 #        fbank = random_erasing(fbank)
 
-
         fbank = fbank.squeeze().transpose(0, 1)  # back to (1024, 128)
         fbank = (fbank - norm_mean) / (norm_std * 2)
         if noise == True:
@@ -142,6 +141,50 @@ def custom_loss_function(leaf_nodes, targets, features, temperature, device):
          
     return sum(layer_loss)
 
+def linear_cr(samples,targets,batch_size,audio_conf,args,model,criterion,scale1=0.8,scale2=0.2):
+    # Generate Augmentation
+    print(f"Linear CR activated with scalars: {scale1} and {scale2}")
+    samples_with_aug = torch.cat([samples,samples])
+    samples_with_aug = specAug(samples_with_aug,audio_conf)
+    samples = samples_with_aug[:batch_size]
+    aug = samples_with_aug[batch_size:]
+
+    with torch.cuda.amp.autocast():
+        outputs_samples, feats  = model(samples, mask_t_prob=args.mask_t_prob, mask_f_prob=args.mask_f_prob)
+        bce_loss_samples = criterion(outputs_samples, targets)
+        outputs_aug, feats  = model(aug, mask_t_prob=args.mask_t_prob, mask_f_prob=args.mask_f_prob)
+        bce_loss_aug = criterion(outputs_aug, targets)
+    output1 = scale1*outputs_samples + scale2*outputs_aug
+    y = scale1*samples + scale2*aug
+    with torch.cuda.amp.autocast():
+        output2, feats  = model(y, mask_t_prob=args.mask_t_prob, mask_f_prob=args.mask_f_prob)
+        bce_loss2 = criterion(output2, targets)
+
+    return consistency_reg(output1,output2), bce_loss_samples, bce_loss_aug, bce_loss2
+
+def correct_linear_cr(x1,targets, batch_size,audio_conf, model,criterion, args):
+    mixup = np.random.beta(10,10)   #torch.from_numpy(np.random.beta(10,10))
+    x2 = torch.roll(x1, dims=0,shifts=1)
+    targets2 = torch.roll(targets,dims=0,shifts=1)
+    targets3 = mixup*targets + (1-mixup)*targets2
+
+#    print(f"Shape of x2: {x2.shape}, shape of mixup: {mixup.shape}")
+    x3 = mixup*x1 + (1-mixup)*x2
+    concat_data = torch.cat([x1,x2,x3])
+    concat_data_aug = specAug(concat_data,audio_conf)
+    targets = torch.cat([targets,targets2,targets3])
+    with torch.cuda.amp.autocast():
+        outputs, feats = model(concat_data_aug,mask_t_prob=args.mask_t_prob, mask_f_prob=args.mask_f_prob)
+        bce_loss = criterion(outputs,targets)
+    logits = torch.split(outputs,batch_size)
+    logits_1 = logits[0]
+    logits_2 = logits[1]
+    logits_y3 = logits[2]
+    logits_y3_hat = torch.log(torch.sigmoid(logits_1)*mixup + torch.sigmoid(logits_2)*(1-mixup))
+
+    return consistency_reg(logits_y3, logits_y3_hat), bce_loss
+
+#change targets
 
 
 
@@ -165,17 +208,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
     for data_iter_step, (samples, targets, _vids) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
         print(f"samples.shape: {samples.shape}")
-        # Perform 2x Augmentations:
-        if data_aug:
-            lensamples = len(samples)
-            lentargets = len(targets)
-            for i in range(args.num_augs-1):
-                samples = torch.cat([samples,samples[:lensamples]])
-                targets = torch.cat([targets,targets[:lentargets]],dim=0)
-            samples = specAug(samples,audio_conf)
-                #samples = specAug(torch.cat([samples,samples,samples,samples]), audio_conf)
-                #targets = torch.cat([targets,targets,targets,targets], dim = 0)
-            print(f"Shape of samples {samples.shape} and target {targets.shape} have been augmented {args.num_augs} times.")
+
         # we use a per iteration (instead of per epoch) lr scheduler
         if data_iter_step % accum_iter == 0:
             lr_sched.adjust_learning_rate(optimizer, data_iter_step / len(data_loader) + epoch, args)
@@ -183,19 +216,32 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         samples = samples.to(device, non_blocking=True)
         targets = targets.to(device, non_blocking=True)
 
-        # Get outputs from the ViT model and calculate loss
-        with torch.cuda.amp.autocast():
-            outputs, feats  = model(samples, mask_t_prob=args.mask_t_prob, mask_f_prob=args.mask_f_prob)
-            bce_loss = criterion(outputs, targets)
-
-        if data_aug and args.consistency_regularization:
-            batch_size = outputs.shape[0] // args.num_augs
-            parts = torch.split(outputs,batch_size)
-            consistency_reg_loss = consistency_reg_n(parts)
+        if args.linear_cr and data_aug: # disable earlier mixup
+            #consistency_reg_loss, bce_loss = linear_cr(samples,targets,samples.shape[0],audio_conf,args,model,criterion)
+            consistency_reg_loss, bce_loss = correct_linear_cr(samples,targets,samples.shape[0],audio_conf, model,criterion,args)
+            bce_loss = bce_loss
             consistency_constant = args.consistency_constant
         else:
-            consistency_reg_loss = 0
-            consistency_constant = 0
+            if data_aug:
+# remove loop   
+                samples = torch.cat([samples]*args.num_augs)
+                targets = torch.cat([targets]*args.num_augs)
+                samples = specAug(samples,audio_conf)
+                print(f"Shape of samples {samples.shape} and target {targets.shape} have been augmented {args.num_augs} times.")
+
+            # Get outputs from the ViT model and calculate loss
+            with torch.cuda.amp.autocast():
+                outputs, feats  = model(samples, mask_t_prob=args.mask_t_prob, mask_f_prob=args.mask_f_prob)
+                bce_loss = criterion(outputs, targets)
+
+            if data_aug and args.consistency_regularization:
+                batch_size = outputs.shape[0] // args.num_augs
+                parts = torch.split(outputs,batch_size)
+                consistency_reg_loss = consistency_reg_n(parts)
+                consistency_constant = args.consistency_constant
+            else:
+                consistency_reg_loss = 0
+                consistency_constant = 0
 
 
         print(f"Consistency Reg Loss: {consistency_reg_loss}")
