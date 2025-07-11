@@ -89,109 +89,11 @@ def consistency_reg_n(parts):
 
 
 
-def custom_loss_function(leaf_nodes, targets, features, temperature, device):
-    batch_size, num_classes = targets.shape
-    feat_dim = features.shape[2]
-    labels_full = torch.arange(num_classes).unsqueeze(0).repeat(batch_size, 1).to(device)
-
-    layer_loss = []
-    # Later: take this out and place in main_finetune_as.py
-    sup_con_loss = SupConLoss(temperature=temperature)
-    max_depths = 5
-
-    # TODO: make this configurable.
-    features = F.normalize(features, dim=-1)
-
-    for l in range(0, max_depths+1):
-        layer = max_depths-l # We start from the bottom
-
-        node_list = leaf_nodes[str(layer+1)]
-        targets_layer = targets[:, node_list]
-        labels_layer = labels_full[:, node_list]
-
-        # exp(T * T^T)/temp where T=targets_layer
-
-        # This is a 1D tensor, selecting representations of present events.
-        labs = torch.masked_select(labels_layer, targets_layer==1)
-        nnz = labs.shape[0]
-        feats_layer = torch.masked_select(features[:, node_list, :], (targets_layer==1).unsqueeze(-1)).reshape(nnz, feat_dim)
-
-        # mask_ij is True, if i and j have the same labels.
-        mask_labels = labs.unsqueeze(1) == labs.unsqueeze(0)
-        # remove self-positive pairs.
-        mask_diagonal = torch.eye(*mask_labels.shape, dtype=torch.bool, device=device)
-        mask_labels.masked_fill_(mask_diagonal, 0)
-
-        if mask_labels.sum() == 0:
-            continue
-
-        # Calculate Leaf Loss
-        current_layer_loss = sup_con_loss(features = feats_layer.unsqueeze(1), mask=mask_labels)
-
-        print(f"Layer {layer} number of event instances: {nnz}")
-        print(f"Layer {layer} number of event classes: {torch.unique(labs).shape[0]}")
-        print(f"Layer {layer} number of positive pairs: {int(mask_labels.sum())}")
-
-        print(f"Layer {layer} loss: {current_layer_loss}")
-
-        # ADD A PENALTY LOSS DUE TO LAYER
-        current_penalty = 1 #/(max_depths - layer +1)   #np.exp(1/((max_depths-layer)+1))
-        layer_loss_penalty = current_layer_loss * current_penalty
-        layer_loss.append(layer_loss_penalty)
-         
-    return sum(layer_loss)
-
-def linear_cr(samples,targets,batch_size,audio_conf,args,model,criterion,scale1=0.8,scale2=0.2):
-    # Generate Augmentation
-    print(f"Linear CR activated with scalars: {scale1} and {scale2}")
-    samples_with_aug = torch.cat([samples,samples])
-    samples_with_aug = specAug(samples_with_aug,audio_conf)
-    samples = samples_with_aug[:batch_size]
-    aug = samples_with_aug[batch_size:]
-
-    with torch.cuda.amp.autocast():
-        outputs_samples, feats  = model(samples, mask_t_prob=args.mask_t_prob, mask_f_prob=args.mask_f_prob)
-        bce_loss_samples = criterion(outputs_samples, targets)
-        outputs_aug, feats  = model(aug, mask_t_prob=args.mask_t_prob, mask_f_prob=args.mask_f_prob)
-        bce_loss_aug = criterion(outputs_aug, targets)
-    output1 = scale1*outputs_samples + scale2*outputs_aug
-    y = scale1*samples + scale2*aug
-    with torch.cuda.amp.autocast():
-        output2, feats  = model(y, mask_t_prob=args.mask_t_prob, mask_f_prob=args.mask_f_prob)
-        bce_loss2 = criterion(output2, targets)
-
-    return consistency_reg(output1,output2), bce_loss_samples, bce_loss_aug, bce_loss2
-
-def correct_linear_cr(x1,targets, batch_size,audio_conf, model,criterion, args):
-    mixup = np.random.beta(10,10)   #torch.from_numpy(np.random.beta(10,10))
-    x2 = torch.roll(x1, dims=0,shifts=1)
-    targets2 = torch.roll(targets,dims=0,shifts=1)
-    targets3 = mixup*targets + (1-mixup)*targets2
-
-#    print(f"Shape of x2: {x2.shape}, shape of mixup: {mixup.shape}")
-    x3 = mixup*x1 + (1-mixup)*x2
-    concat_data = torch.cat([x1,x2,x3])
-    concat_data_aug = specAug(concat_data,audio_conf)
-    targets = torch.cat([targets,targets2,targets3])
-    with torch.cuda.amp.autocast():
-        outputs, feats = model(concat_data_aug,mask_t_prob=args.mask_t_prob, mask_f_prob=args.mask_f_prob)
-        bce_loss = criterion(outputs,targets)
-    logits = torch.split(outputs,batch_size)
-    logits_1 = logits[0]
-    logits_2 = logits[1]
-    logits_y3 = logits[2]
-    logits_y3_hat = torch.log(torch.sigmoid(logits_1)*mixup + torch.sigmoid(logits_2)*(1-mixup))
-
-    return consistency_reg(logits_y3, logits_y3_hat), bce_loss
-
-#change targets
-
-
 
 def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
                     data_loader: Iterable, optimizer: torch.optim.Optimizer,
                     device: torch.device, epoch: int, loss_scaler, layer_leafs,audio_conf,data_aug ,max_norm: float = 0,
-                    mixup_fn: Optional[Mixup] = None, log_writer=None,
+                    mixup_fn: Optional[Mixup] = None, log_writer=None, large_data_loader: Iterable = None,
                     args=None):
     model.train(True)
     metric_logger = misc.MetricLogger(delimiter="  ")
@@ -200,8 +102,12 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
     print_freq = 500
 
     accum_iter = args.accum_iter
-
     optimizer.zero_grad()
+    
+    if large_data_loader is not None:
+        large_iter = iter(large_data_loader)
+        print("Large Data Loader exists...")
+    
 
     if log_writer is not None:
         print('log_dir: {}'.format(log_writer.log_dir))
@@ -216,49 +122,63 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         samples = samples.to(device, non_blocking=True)
         targets = targets.to(device, non_blocking=True)
 
-        if args.linear_cr and data_aug: # disable earlier mixup
-            #consistency_reg_loss, bce_loss = linear_cr(samples,targets,samples.shape[0],audio_conf,args,model,criterion)
-            consistency_reg_loss, bce_loss = correct_linear_cr(samples,targets,samples.shape[0],audio_conf, model,criterion,args)
-            bce_loss = bce_loss
+        if data_aug: 
+            samples = torch.cat([samples]*args.num_augs)
+            targets = torch.cat([targets]*args.num_augs)
+            samples = specAug(samples,audio_conf)
+            print(f"Shape of samples {samples.shape} and target {targets.shape} have been augmented {args.num_augs} times.")
+
+        if large_data_loader is not None:
+            try:
+                large_sample, _,_ = next(large_iter)
+            except StopIteration:
+                large_iter = iter(large_data_loader)
+                large_sample, _,_ = next(large_iter)
+
+            large_samples = torch.cat([large_sample]*2)
+            large_samples = specAug(large_samples,audio_conf).to(device, non_blocking=True)
+            
+            total_samples = torch.cat([large_samples,samples],dim=0) #[batch_size1+batch_size2, 1, 1024, 128]
+        
+        
+        
+
+        # Get outputs from the ViT model and calculate loss
+        with torch.cuda.amp.autocast():
+            if large_data_loader is not None:
+                total_outputs,_  = model(total_samples, mask_t_prob=args.mask_t_prob, mask_f_prob=args.mask_f_prob)
+                large_outputs = total_outputs[:large_samples.shape[0]]
+                outputs = total_outputs[large_samples.shape[0]:]
+                print(f"Shape of large outputs: {large_outputs.shape} and shape of outputs: {outputs.shape}")
+            else:
+                outputs,_  = model(samples, mask_t_prob=args.mask_t_prob, mask_f_prob=args.mask_f_prob)
+            bce_loss = criterion(outputs, targets)
+
+        large_batch_size = large_outputs.shape[0] // 2
+        large_parts = torch.split(large_outputs,large_batch_size)
+        large_consistency_reg_loss = consistency_reg_n(large_parts)
+        print(f"Unlabeled Set Reg Loss: {large_consistency_reg_loss}")
+
+
+        if data_aug and args.consistency_regularization:
+            batch_size = outputs.shape[0] // args.num_augs
+            parts = torch.split(outputs,batch_size)
+            consistency_reg_loss = consistency_reg_n(parts)
             consistency_constant = args.consistency_constant
         else:
-            if data_aug:
-# remove loop   
-                samples = torch.cat([samples]*args.num_augs)
-                targets = torch.cat([targets]*args.num_augs)
-                samples = specAug(samples,audio_conf)
-                print(f"Shape of samples {samples.shape} and target {targets.shape} have been augmented {args.num_augs} times.")
-
-            # Get outputs from the ViT model and calculate loss
-            with torch.cuda.amp.autocast():
-                outputs, feats  = model(samples, mask_t_prob=args.mask_t_prob, mask_f_prob=args.mask_f_prob)
-                bce_loss = criterion(outputs, targets)
-
-            if data_aug and args.consistency_regularization:
-                batch_size = outputs.shape[0] // args.num_augs
-                parts = torch.split(outputs,batch_size)
-                consistency_reg_loss = consistency_reg_n(parts)
-                consistency_constant = args.consistency_constant
-            else:
-                consistency_reg_loss = 0
-                consistency_constant = 0
+            consistency_reg_loss = 0
+            consistency_constant = 0
+                
+                
+        
 
 
         print(f"Consistency Reg Loss: {consistency_reg_loss}")
         print(f"BCE loss: {float(bce_loss)}")
-        bce_cons_loss = bce_loss + (consistency_reg_loss * consistency_constant)
-        print(f"BCE + Constiency_Regulatizaton: {bce_cons_loss}")
+        loss = bce_loss + (consistency_reg_loss * consistency_constant)+large_consistency_reg_loss
+        print(f"BCE + Constiency_Regulatizaton: {loss}")
 
-
-        if args.label_dep_classification and args.sup_con_loss_weight:
-            assert feats is not None
-            contrastive_loss = custom_loss_function(layer_leafs, targets, feats, args.sup_con_loss_temperature, device)
-            print(f"Contrastive Loss: {float(contrastive_loss)}")
-        else:
-            contrastive_loss = 0.0
-
-        # TODO: configure the coefficient.
-        loss = bce_cons_loss + args.sup_con_loss_weight * contrastive_loss
+        contrastive_loss=0
 
         loss_value = loss.item()
         if not math.isfinite(loss_value):

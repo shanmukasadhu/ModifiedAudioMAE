@@ -195,6 +195,9 @@ def get_args_parser():
     parser.add_argument('--consistency_constant', type=float, default=1.0, help = 'Constant for consistency regularization')
     parser.add_argument('--num_augs', type=int, default=2, help = 'Number of augmentations')
     parser.add_argument('--linear_cr', action='store_true', default=False, help = 'Activate Linear CR')
+    parser.add_argument('--big_data', type=str, default=None, help = 'For semi-supervised learning')
+
+
 
     # Wandb Logging:
     parser.add_argument('--no_wandb', action='store_true', help='Disable WandB logging')
@@ -243,6 +246,7 @@ class PatchEmbed_new(nn.Module):
 def main(args):
     misc.init_distributed_mode(args)
 
+    big_data = args.big_data
     if not args.no_wandb:
         wandb_name = (args.wandb_name +
                       "label_dep=" + str(args.label_dep_classification) +
@@ -302,6 +306,10 @@ def main(args):
         dataset_val = AudiosetDataset(False, args.data_eval, label_csv=args.label_csv, audio_conf=audio_conf_val, 
                                         use_fbank=args.use_fbank, fbank_dir=args.fbank_dir, 
                                         roll_mag_aug=False, load_video=args.load_video, mode='eval')
+        if big_data is not None:
+            dataset_train_big = AudiosetDataset(args.data_aug,args.big_data, label_csv=args.label_csv, audio_conf=audio_conf_train, 
+                                        use_fbank=args.use_fbank, fbank_dir=args.fbank_dir, 
+                                        roll_mag_aug=args.roll_mag_aug, load_video=args.load_video, mode='train')
 
     if True: #args.distributed:
         num_tasks = misc.get_world_size()
@@ -369,6 +377,16 @@ def main(args):
         pin_memory=args.pin_mem,
         drop_last=False
     )
+
+    if big_data is not None:
+        data_loader_train_big = torch.utils.data.DataLoader(
+        dataset_train_big, sampler=sampler_train,
+        batch_size=args.batch_size*2,
+        num_workers=args.num_workers,
+        pin_memory=False,
+        drop_last=True)
+        print("big data loader is ready..., batch size is times 2")
+
 
     # # Reads label depths file and gets label depths
     # print("Loading label depths")
@@ -509,13 +527,13 @@ def main(args):
                 model, criterion, data_loader_train,
                 optimizer, device, epoch, loss_scaler, layer_leafs, audio_conf_train,args.data_aug,
                 args.clip_grad, mixup_fn,
-                log_writer=log_writer,
+                log_writer=log_writer,large_data_loader=data_loader_train_big,
                 args=args
             )
         if args.output_dir and epoch %59==0:
             misc.save_model(
                 args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
-                loss_scaler=loss_scaler, epoch=epoch,name_of_exp=f"7augablation") #{args.num_augs}augablation
+                loss_scaler=loss_scaler, epoch=epoch,name_of_exp=f"semitest1ablation") #{args.num_augs}augablation
         if epoch >= args.first_eval_ep:
             test_stats,bce_eval_loss = evaluate(data_loader_val, model, device, args.dist_eval)
             print(f"mAP of the network on the {len(dataset_val)} test images: {test_stats['mAP']:.4f}")
