@@ -39,7 +39,7 @@ def specAug(samples, audio_conf):
     random_erasing = torchvision.transforms.RandomErasing(p=0.25)
 
     return_samples = []
-
+    import pdb; pdb.set_trace()
     # Loop through each item in the batch:
     for i in range(samples.size(0)):
         fbank = samples[i,0]
@@ -93,7 +93,7 @@ def consistency_reg_n(parts):
 def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
                     data_loader: Iterable, optimizer: torch.optim.Optimizer,
                     device: torch.device, epoch: int, loss_scaler, layer_leafs,audio_conf,data_aug ,max_norm: float = 0,
-                    mixup_fn: Optional[Mixup] = None, log_writer=None, large_data_loader: Iterable = None,
+                    mixup_fn: Optional[Mixup] = None, log_writer=None,large_data_loader:Iterable=None ,large_iter=None,
                     args=None):
     model.train(True)
     metric_logger = misc.MetricLogger(delimiter="  ")
@@ -103,9 +103,9 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
     accum_iter = args.accum_iter
     optimizer.zero_grad()
-    
+    # move outside function into main    
     if large_data_loader is not None:
-        large_iter = iter(large_data_loader)
+        #large_iter = iter(large_data_loader)
         print("Large Data Loader exists...")
     
 
@@ -132,16 +132,13 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
             try:
                 large_sample, _,_ = next(large_iter)
             except StopIteration:
+                print("StopIteration reached, re-initializing iter")
                 large_iter = iter(large_data_loader)
                 large_sample, _,_ = next(large_iter)
 
             large_samples = torch.cat([large_sample]*2)
             large_samples = specAug(large_samples,audio_conf).to(device, non_blocking=True)
-            
             total_samples = torch.cat([large_samples,samples],dim=0) #[batch_size1+batch_size2, 1, 1024, 128]
-        
-        
-        
 
         # Get outputs from the ViT model and calculate loss
         with torch.cuda.amp.autocast():
@@ -154,10 +151,15 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
                 outputs,_  = model(samples, mask_t_prob=args.mask_t_prob, mask_f_prob=args.mask_f_prob)
             bce_loss = criterion(outputs, targets)
 
-        large_batch_size = large_outputs.shape[0] // 2
-        large_parts = torch.split(large_outputs,large_batch_size)
-        large_consistency_reg_loss = consistency_reg_n(large_parts)
-        print(f"Unlabeled Set Reg Loss: {large_consistency_reg_loss}")
+        if large_data_loader is not None:
+            large_batch_size = large_outputs.shape[0] // 2
+            large_parts = torch.split(large_outputs,large_batch_size)
+            large_consistency_reg_loss = consistency_reg_n(large_parts)
+            print(f"Unlabeled Set Reg Loss: {large_consistency_reg_loss}")
+            big_consistency_constant = args.big_consistency_constant
+        else:
+            big_consistency_constant = 0
+            large_consistency_reg_loss = 0
 
 
         if data_aug and args.consistency_regularization:
@@ -175,7 +177,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
         print(f"Consistency Reg Loss: {consistency_reg_loss}")
         print(f"BCE loss: {float(bce_loss)}")
-        loss = bce_loss + (consistency_reg_loss * consistency_constant)+large_consistency_reg_loss
+        loss = bce_loss + (consistency_reg_loss*consistency_constant)+(large_consistency_reg_loss*big_consistency_constant)
         print(f"BCE + Constiency_Regulatizaton: {loss}")
 
         contrastive_loss=0
@@ -218,7 +220,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
     print("Averaged stats:", metric_logger)
-    return {k: meter.global_avg for k, meter in metric_logger.meters.items()}, float(contrastive_loss), float(bce_loss)
+    return {k: meter.global_avg for k, meter in metric_logger.meters.items()}, float(contrastive_loss), float(bce_loss), large_iter
 
 
 @torch.no_grad()

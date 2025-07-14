@@ -196,7 +196,7 @@ def get_args_parser():
     parser.add_argument('--num_augs', type=int, default=2, help = 'Number of augmentations')
     parser.add_argument('--linear_cr', action='store_true', default=False, help = 'Activate Linear CR')
     parser.add_argument('--big_data', type=str, default=None, help = 'For semi-supervised learning')
-
+    parser.add_argument('--big_consistency_constant', type=float, default=1.0, help = 'Constant for big consistency regularization')
 
 
     # Wandb Logging:
@@ -341,7 +341,7 @@ def main(args):
             sampler_train = torch.utils.data.DistributedSampler(
                 dataset_train, num_replicas=num_tasks, rank=global_rank, shuffle=True
             )
-
+            import pdb; pdb.set_trace()
         print("Sampler_train = %s" % str(sampler_train))
         if args.dist_eval:
             if len(dataset_val) % num_tasks != 0:
@@ -381,8 +381,8 @@ def main(args):
     if big_data is not None:
         data_loader_train_big = torch.utils.data.DataLoader(
         dataset_train_big, sampler=sampler_train,
-        batch_size=args.batch_size*2,
-        num_workers=args.num_workers,
+        batch_size=args.batch_size,
+        num_workers=args.num_workers*2,
         pin_memory=False,
         drop_last=True)
         print("big data loader is ready..., batch size is times 2")
@@ -510,6 +510,12 @@ def main(args):
     print(f"Start training for {args.epochs} epochs")
     start_time = time.time()
     max_mAP = 0.0
+    # add large iter here
+
+    if big_data is not None:
+        large_iter = iter(data_loader_train_big)
+        print("Large Data Loader is going to be sent into training...")
+
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
             data_loader_train.sampler.set_epoch(epoch)
@@ -523,17 +529,17 @@ def main(args):
         #         args=args
         #     )            
         # else:
-        train_stats, contrastive_loss_val, bce_train_loss = train_one_epoch(
+        train_stats, contrastive_loss_val, bce_train_loss, large_iter = train_one_epoch(
                 model, criterion, data_loader_train,
                 optimizer, device, epoch, loss_scaler, layer_leafs, audio_conf_train,args.data_aug,
                 args.clip_grad, mixup_fn,
-                log_writer=log_writer,large_data_loader=data_loader_train_big,
+                log_writer=log_writer,large_data_loader=data_loader_train_big,large_iter = large_iter,
                 args=args
             )
         if args.output_dir and epoch %59==0:
             misc.save_model(
                 args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
-                loss_scaler=loss_scaler, epoch=epoch,name_of_exp=f"semitest1ablation") #{args.num_augs}augablation
+                loss_scaler=loss_scaler, epoch=epoch,name_of_exp=f"semitest3ablation") #{args.num_augs}augablation
         if epoch >= args.first_eval_ep:
             test_stats,bce_eval_loss = evaluate(data_loader_val, model, device, args.dist_eval)
             print(f"mAP of the network on the {len(dataset_val)} test images: {test_stats['mAP']:.4f}")
