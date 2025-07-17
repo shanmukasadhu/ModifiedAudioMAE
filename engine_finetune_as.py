@@ -39,7 +39,6 @@ def specAug(samples, audio_conf):
     random_erasing = torchvision.transforms.RandomErasing(p=0.25)
 
     return_samples = []
-    import pdb; pdb.set_trace()
     # Loop through each item in the batch:
     for i in range(samples.size(0)):
         fbank = samples[i,0]

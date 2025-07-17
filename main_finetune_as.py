@@ -21,7 +21,7 @@ import torch
 import torch.nn as nn
 import torch.backends.cudnn as cudnn
 from torch.utils.tensorboard import SummaryWriter
-
+import torch.distributed as dist
 
 # assert timm.__version__ == "0.3.2" # version check
 from timm.models.layers import trunc_normal_
@@ -128,7 +128,7 @@ def get_args_parser():
                         help='path where to save, empty for no saving')
     parser.add_argument('--log_dir', default='./output_dir',
                         help='path where to tensorboard log')
-    parser.add_argument('--device', default='cuda:1',
+    parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
     parser.add_argument('--seed', default=0, type=int)
     parser.add_argument('--resume', default='',
@@ -159,7 +159,7 @@ def get_args_parser():
     parser.add_argument("--data_train", type=str, default='/checkpoint/berniehuang/ast/egs/audioset/data/datafiles/train_video.json', help="training data json")
     parser.add_argument("--data_eval", type=str, default='/checkpoint/berniehuang/ast/egs/audioset/data/datafiles/eval_video.json', help="validation data json")
     parser.add_argument("--label_csv", type=str, default='/checkpoint/berniehuang/ast/egs/audioset/data/class_labels_indices.csv', help="csv with class labels")
-    parser.add_argument("--weight_csv", type=str, default='/checkpoint/berniehuang/mae/data/audioset/weight_train_all.csv', help="weight file")
+    parser.add_argument("--weight_csv", type=str, default=None, help="weight file")
     
     parser.add_argument('--freqm', help='frequency mask max length', type=int, default=48)
     parser.add_argument('--timem', help='time mask max length', type=int, default=192)
@@ -197,7 +197,7 @@ def get_args_parser():
     parser.add_argument('--linear_cr', action='store_true', default=False, help = 'Activate Linear CR')
     parser.add_argument('--big_data', type=str, default=None, help = 'For semi-supervised learning')
     parser.add_argument('--big_consistency_constant', type=float, default=1.0, help = 'Constant for big consistency regularization')
-
+    parser.add_argument('--one_eval', action='store_true', default=False, help = 'Activate One Eval')
 
     # Wandb Logging:
     parser.add_argument('--no_wandb', action='store_true', help='Disable WandB logging')
@@ -247,14 +247,14 @@ def main(args):
     misc.init_distributed_mode(args)
 
     big_data = args.big_data
-    if not args.no_wandb:
+    if not args.no_wandb and dist.get_rank() == 0:
         wandb_name = (args.wandb_name +
                       "label_dep=" + str(args.label_dep_classification) +
                       "_weight=" + str(args.sup_con_loss_weight) +
                       "_temp=" + str(args.sup_con_loss_temperature) +
                       '_aug=' + str(args.data_aug))
         wandb.init(project=args.wandb_project, entity=args.wandb_entity, config=args, resume='allow', name=wandb_name)
-
+    torch.distributed.barrier()
     print('job dir: {}'.format(os.path.dirname(os.path.realpath(__file__))))
     print("{}".format(args).replace(', ', ',\n'))
     
@@ -341,7 +341,22 @@ def main(args):
             sampler_train = torch.utils.data.DistributedSampler(
                 dataset_train, num_replicas=num_tasks, rank=global_rank, shuffle=True
             )
-            import pdb; pdb.set_trace()
+            if args.weight_csv is not None and big_data is not None:
+                print("Big Weighted Sampler has been created...")
+                epoch_len=args.epoch_len
+                samples_weight = np.loadtxt(args.weight_csv, delimiter=',')
+                sampler_train_big = DistributedSamplerWrapper(
+                    sampler=WeightedRandomSampler(samples_weight, num_samples=epoch_len, replacement=args.replacement),
+                    dataset=range(epoch_len),
+                    num_replicas=num_tasks, #num_nodes, #num_tasks?
+                    rank=global_rank, #rank, # global_rank?
+                )
+            elif big_data is not None:
+                print("Big Sampler has been created...")
+                sampler_train_big = torch.utils.data.DistributedSampler(
+                    dataset_train_big, num_replicas=num_tasks, rank=global_rank, shuffle=True
+                )
+            
         print("Sampler_train = %s" % str(sampler_train))
         if args.dist_eval:
             if len(dataset_val) % num_tasks != 0:
@@ -350,6 +365,9 @@ def main(args):
                       'equal num of samples per-process.')
             sampler_val = torch.utils.data.DistributedSampler(
                 dataset_val, num_replicas=num_tasks, rank=global_rank, shuffle=True)  # shuffle=True to reduce monitor bias
+            if args.one_eval:
+                print("Putting evaluation sampler on 1 GPU")
+                sampler_val = torch.utils.data.SequentialSampler(dataset_val)
         else:
             sampler_val = torch.utils.data.SequentialSampler(dataset_val)
     else:
@@ -379,25 +397,21 @@ def main(args):
     )
 
     if big_data is not None:
+        scalar = 6
         data_loader_train_big = torch.utils.data.DataLoader(
-        dataset_train_big, sampler=sampler_train,
-        batch_size=args.batch_size,
-        num_workers=args.num_workers*2,
+        dataset_train_big, sampler=sampler_train_big,
+        batch_size=args.batch_size*scalar,
+        num_workers=args.num_workers,
         pin_memory=False,
         drop_last=True)
-        print("big data loader is ready..., batch size is times 2")
+        print(f"big data loader is ready..., batch size is times {scalar}")
 
 
-    # # Reads label depths file and gets label depths
-    # print("Loading label depths")
-    # label_depths_file = pd.read_csv("label_depths_556.csv",usecols=["depth"])
-    # label_depths556 = label_depths_file["depth"].tolist()
-    # label_depths556=torch.Tensor(label_depths556)
-
-    # Load Layer leafs:
     print("Loading Layer Leafs")
     with open("layer_leafs.json","r") as f:
         layer_leafs = json.load(f)
+
+
 
     mixup_fn = None
     mixup_active = args.mixup > 0 or args.cutmix > 0. or args.cutmix_minmax is not None
@@ -476,7 +490,7 @@ def main(args):
     print("effective batch size: %d" % eff_batch_size)
 
     if args.distributed:
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
         model_without_ddp = model.module
 
     # build optimizer with layer-wise lr decay (lrd)
@@ -536,41 +550,42 @@ def main(args):
                 log_writer=log_writer,large_data_loader=data_loader_train_big,large_iter = large_iter,
                 args=args
             )
-        if args.output_dir and epoch %59==0:
+        if args.output_dir and epoch %10==0:
             misc.save_model(
                 args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
-                loss_scaler=loss_scaler, epoch=epoch,name_of_exp=f"semitest3ablation") #{args.num_augs}augablation
+                loss_scaler=loss_scaler, epoch=epoch,name_of_exp=f"semitest4ablation") #{args.num_augs}augablation
         if epoch >= args.first_eval_ep:
-            test_stats,bce_eval_loss = evaluate(data_loader_val, model, device, args.dist_eval)
-            print(f"mAP of the network on the {len(dataset_val)} test images: {test_stats['mAP']:.4f}")
-            max_mAP = max(max_mAP, test_stats["mAP"])
-            print(f'Max mAP: {max_mAP:.4f}')
+            if dist.get_rank()==0:
+                test_stats,bce_eval_loss = evaluate(data_loader_val, model, device, args.dist_eval)
+                print(f"mAP of the network on the {len(dataset_val)} test images: {test_stats['mAP']:.4f}")
+                max_mAP = max(max_mAP, test_stats["mAP"])
+                print(f'Max mAP: {max_mAP:.4f}')
+            torch.distributed.barrier()
         else:
             test_stats ={'mAP': 0.0}
             bce_eval_loss = 0.0
             print(f'too new to evaluate!')
 
-        if log_writer is not None:
+        if log_writer is not None  and dist.get_rank() == 0:
             log_writer.add_scalar('perf/mAP', test_stats['mAP'], epoch)
-
-        log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
-                        **{f'test_{k}': v for k, v in test_stats.items()},
-                        'epoch': epoch,
-                        'n_parameters': n_parameters}
-        wandb_stats = {'epoch': epoch,'Test mAP': test_stats['mAP'],'Train_lr': log_stats['train_lr'],
-                       'Train_loss': log_stats['train_loss'],
-                       'BCE_train_loss': bce_train_loss, 'Contrastive_loss':contrastive_loss_val, 'BCE_eval_loss': bce_eval_loss}
         
-        if not args.no_wandb:
-            wandb.log(wandb_stats)
-
-
-        if args.output_dir and misc.is_main_process():
-            if log_writer is not None:
-                log_writer.flush()
-            with open(os.path.join(args.output_dir, "workingiwith2augv2.txt"), mode="a", encoding="utf-8") as f:
-                f.write(json.dumps(log_stats) + "\n")
-
+        if dist.get_rank() == 0:
+            log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
+                            **{f'test_{k}': v for k, v in test_stats.items()},
+                            'epoch': epoch,
+                            'n_parameters': n_parameters}
+            wandb_stats = {'epoch': epoch,'Test mAP': test_stats['mAP'],'Train_lr': log_stats['train_lr'],
+                           'Train_loss': log_stats['train_loss'],
+                           'BCE_train_loss': bce_train_loss, 'Contrastive_loss':contrastive_loss_val, 'BCE_eval_loss': bce_eval_loss}
+        
+            if not args.no_wandb:
+                wandb.log(wandb_stats)
+            if args.output_dir and misc.is_main_process():
+                if log_writer is not None:
+                    log_writer.flush()
+                with open(os.path.join(args.output_dir, "workingiwith2augv2.txt"), mode="a", encoding="utf-8") as f:
+                    f.write(json.dumps(log_stats) + "\n")
+        torch.distributed.barrier()
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     print('Training time {}'.format(total_time_str))
